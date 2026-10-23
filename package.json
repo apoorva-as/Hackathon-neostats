@@ -19,7 +19,11 @@
     "prisma:generate": "npm --prefix server run prisma:generate",
     "prisma:migrate:dev": "npm --prefix server run prisma:migrate:dev --",
     "prisma:migrate:status": "npm --prefix server run prisma:migrate:status",
-    "prisma:studio": "npm --prefix server run prisma:studio"
+    "prisma:studio": "npm --prefix server run prisma:studio",
+    "test:client": "npm --prefix client test",
+    "test:all": "npm test && npm run test:client",
+    "db:seed": "npm --prefix server run db:seed",
+    "prisma:migrate:deploy": "npm --prefix server run prisma:migrate:deploy"
   },
   "devDependencies": {
     "concurrently": "10.0.6"

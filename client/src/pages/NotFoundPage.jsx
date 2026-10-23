@@ -1,13 +1,15 @@
-import { Link } from 'react-router'
+import Button from '../components/Button.jsx'
+import { EmptyState } from '../components/Feedback.jsx'
 
 function NotFoundPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
-      <h1 className="text-xl font-semibold text-slate-900">Page not found</h1>
-      <Link to="/" className="text-indigo-600 hover:underline">
-        Go to home
-      </Link>
-    </main>
+    <EmptyState
+      icon="search"
+      title="Page not found"
+      action={<Button to="/dashboard" variant="secondary">Go to dashboard</Button>}
+    >
+      The page you are looking for does not exist.
+    </EmptyState>
   )
 }
 

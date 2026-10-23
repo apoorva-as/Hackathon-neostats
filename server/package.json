@@ -11,7 +11,9 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "node --test \"tests/**/*.test.js\"",
+    "pretest": "node scripts/setup-test-db.js",
+    "test": "node --import ./tests/helpers/useTestDatabase.js --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "db:seed": "node prisma/seed.js",
     "prisma:validate": "prisma validate",
     "prisma:format": "prisma format",
     "prisma:generate": "prisma generate",
@@ -34,5 +36,8 @@
     "nodemon": "3.1.14",
     "prisma": "6.19.3",
     "supertest": "7.3.1"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }

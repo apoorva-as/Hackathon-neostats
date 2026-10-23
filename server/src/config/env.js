@@ -17,3 +17,7 @@ export const env = Object.freeze({
 })
 
 export const isProduction = env.NODE_ENV === 'production'
+
+// TEMPORARY (Phase 1 only): the development user switcher (X-Dev-User-Id
+// header) works only outside production. Phase 3 replaces it with JWT auth.
+export const devUserSwitcherEnabled = !isProduction

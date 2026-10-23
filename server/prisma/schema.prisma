@@ -1,5 +1,8 @@
 // Prisma schema for the NEOSTATS Project Management Platform.
 // Docs: https://www.prisma.io/docs/orm/prisma-schema
+//
+// Phase 1 models: User, Project, ProjectMember.
+// Task and Comment models arrive in Phase 2; password/auth fields in Phase 3.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,6 +13,87 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Domain models (User, Project, ProjectMember, Task, Comment) are intentionally
-// NOT defined yet. They come in the next development phase and will be applied
-// with: npm run prisma:migrate:dev -- --name <migration-name>
+// Global role of a user across the whole platform.
+enum UserRole {
+  ADMIN
+  PROJECT_MANAGER
+  TEAM_MEMBER
+  VIEWER
+}
+
+// Lifecycle of a project. ARCHIVED projects are read-only history.
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+// Role of a team member INSIDE one project (separate from the global role).
+// The project manager is NOT stored here; see Project.managerId.
+//   MEMBER: works on the project (in Phase 2: updates their tasks, comments)
+//   VIEWER: read-only access to this one project
+enum ProjectRole {
+  MEMBER
+  VIEWER
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  // Always stored trimmed + lowercase (normalized in services and the seed).
+  email     String   @unique @db.VarChar(255)
+  role      UserRole @default(TEAM_MEMBER)
+  // Soft "deactivate" flag (brief: users are deactivated, not deleted).
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Phase 3 will add: passwordHash String
+
+  managedProjects Project[]       @relation("ProjectManager")
+  memberships     ProjectMember[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Project {
+  id          Int           @id @default(autoincrement())
+  name        String        @db.VarChar(120)
+  description String        @default("") @db.VarChar(2000)
+  status      ProjectStatus @default(ACTIVE)
+  // The single source of truth for "who manages this project".
+  // Nullable: a project can exist before a manager is assigned.
+  managerId   Int?
+  manager     User?         @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
+  // Set when status becomes ARCHIVED, cleared when un-archived.
+  archivedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members ProjectMember[]
+
+  @@index([managerId])
+  @@index([status])
+  @@map("projects")
+}
+
+// Join table: which users belong to which project, and with which project role.
+model ProjectMember {
+  id        Int         @id @default(autoincrement())
+  projectId Int
+  userId    Int
+  role      ProjectRole @default(MEMBER)
+  createdAt DateTime    @default(now())
+
+  // Deleting a project removes its memberships (no orphans). Users are never
+  // hard-deleted, but if one ever were, their memberships go with them.
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A user can be in a project at most once.
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}

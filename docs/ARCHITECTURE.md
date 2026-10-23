@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **setup phase.** Sections marked **(planned)** describe intended designs that have **not** been implemented.
+> Status: **Phase 1 implemented** (users, projects, memberships, permission policy, temporary dev user switcher). Sections marked **(planned)** are not implemented yet.
 
 ## Overview
 
@@ -15,10 +15,10 @@
 
 - Render the UI and handle routing (React Router, `BrowserRouter` in `main.jsx`, routes in `App.jsx`).
 - Call the backend over HTTP through `src/services/api.js` (one Axios instance whose base URL comes from `VITE_API_BASE_URL`).
-- Hold UI state (later, the logged-in user in a React context).
+- Hold UI state (currently the selected development user in `DevUserContext`; later the logged-in user).
 - **Does not** hold secrets, talk to the database, or make final security decisions.
 
-Implemented now: a placeholder `HomePage` with a "Check backend health" button, and a `NotFoundPage`.
+Implemented now: `AppLayout` (sidebar, header, user switcher) and pages for the dashboard, project list, create/edit, project details with team management, and users. Data loading goes through `services/*.js` and the `useApi` hook. `utils/permissions.js` decides which buttons to show, as UX only; the API's `permissions` object and 403 responses are authoritative.
 
 ## 2. Backend responsibilities (`server/`)
 
@@ -27,7 +27,7 @@ Implemented now: a placeholder `HomePage` with a "Check backend health" button, 
 - Be the only component that talks to PostgreSQL (through Prisma).
 - Return consistent JSON success and error shapes.
 
-Implemented now: app setup (`src/app.js`), startup (`src/server.js`), CORS, JSON body parsing, `/api/health`, `/api/health/db`, 404 handler, central error handler.
+Implemented now: health routes, `/api/projects` (+ members), `/api/users`, `/api/dev/users`, Zod validation middleware, permission policy, central error handler (maps Prisma errors to safe 4xx responses).
 
 ## 3. Database responsibilities
 
@@ -35,7 +35,19 @@ Implemented now: app setup (`src/app.js`), startup (`src/server.js`), CORS, JSON
 - Enforce integrity: primary/foreign keys, unique constraints, cascade rules **(planned)**.
 - Local PostgreSQL 16 on port 5433, database `neostats_project_manager`.
 
-Implemented now: datasource and generator in `prisma/schema.prisma` only. No models, no migrations.
+Implemented now (migration `20261023080509_init_users_projects_members`):
+
+```
+users ──1───────────< projects.managerId (nullable, ON DELETE SET NULL)
+  │
+  └──1──< project_members >──1── projects
+          (projectId, userId) UNIQUE; ON DELETE CASCADE on both FKs
+          role: MEMBER | VIEWER (project-level)
+```
+
+- `users.role` is the global role enum (`ADMIN`, `PROJECT_MANAGER`, `TEAM_MEMBER`, `VIEWER`). `users.email` is unique and stored lowercase. `isActive` supports soft deactivation.
+- The manager lives **only** in `projects.managerId` and must be a `PROJECT_MANAGER`. Members must be `TEAM_MEMBER`s. The two can never contradict each other.
+- `projects.status` (`ACTIVE`, `ON_HOLD`, `COMPLETED`, `ARCHIVED`) + `archivedAt` implement archiving. Deleting a project cascades to its memberships.
 
 ## 4. Request flow
 
@@ -78,28 +90,39 @@ request → cors → json → router → authenticate → authorize(role) → va
 
 The server reads variables only in `src/config/env.js` (`dotenv/config`). Both `.env` files are git-ignored; `.env.example` templates are committed.
 
-## 8. Layer separation (convention; only health uses it so far)
+## 8. Layer separation
 
 | Layer | Folder | Responsibility |
 |---|---|---|
 | Routes | `src/routes/` | Map method + path to middleware and a controller. No logic. |
-| Middleware | `src/middleware/` | Cross-cutting concerns: auth, role checks, validation, 404, errors. |
-| Validators | `src/validators/` | Zod schemas for body / params / query **(planned)**. |
+| Middleware | `src/middleware/` | Cross-cutting concerns: current user (`devActor`, later auth), validation, 404, errors. |
+| Policies | `src/policies/` | Pure permission rules `(actor, resource) → boolean`. |
+| Validators | `src/validators/` | Zod schemas for body / params / query. |
 | Controllers | `src/controllers/` | Read the request, call a service, send the response. No Prisma. |
-| Services | `src/services/` | Business rules and Prisma queries. No `req`/`res`. **(planned)** |
+| Services | `src/services/` | Business rules, policy checks and Prisma queries. No `req`/`res`. |
 | Utils | `src/utils/` | Small shared helpers (`ApiError`). |
 
-## 9. Authentication and authorization (planned)
+## 9. Authorization in Phase 1 (implemented) and the temporary user switcher
+
+```
+request → cors → json → /api router → requireDevActor → validate(zod) → controller → service ─┬─ policy check (403)
+                                        (req.actor from DB)                                      └─ prisma → PostgreSQL
+```
+
+- `requireDevActor` reads `X-Dev-User-Id`, loads the user from PostgreSQL and sets `req.actor`. **It is not authentication:** any id can be chosen, so it is for local demos only, and it is disabled in production. The role comes from the database, never from the client.
+- Services pass `req.actor` to `policies/project.policy.js` (`visibleProjectsWhere`, `canViewProject`, `canEditProject`, `canManageMembers`, `canAssignManager`, …). The visibility rule is also applied as a Prisma `where` filter, so lists only ever contain permitted rows.
+- Phase 3 swaps `requireDevActor` for a JWT `requireAuth` that sets the same `req.actor`. Policies and services do not change.
+
+## 10. Authentication (planned, Phase 3)
 
 - **Passwords:** hashed with `bcryptjs` before storage; never returned by the API.
 - **Login:** verify the hash, then sign a JWT (`jsonwebtoken`) with `{ sub: userId, role }`, using `JWT_SECRET` and `JWT_EXPIRES_IN`.
 - **Transport:** client sends `Authorization: Bearer <token>`; an Axios interceptor in `services/api.js` will add it.
 - **`authenticate` middleware:** verifies the token and loads the user into `req.user`; returns 401 on failure.
-- **`authorize(...roles)` middleware:** checks the global role (Admin, Project Manager, Team Member, Viewer); returns 403 on failure.
-- **Project-level checks** in services: e.g. only members can see a project's tasks, Viewers are read-only.
+- Role and project checks reuse the Phase 1 policy module.
 - Frontend role checks only hide buttons; **the backend is the security boundary.**
 
-## 10. Concurrent task updates (planned)
+## 11. Concurrent task updates (planned, Phase 2)
 
 Optimistic concurrency control:
 

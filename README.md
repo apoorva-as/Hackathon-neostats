@@ -2,7 +2,9 @@
 
 A Collaborative Project Management Platform for the **NEOSTATS Full Stack Engineering Hackathon**.
 
-> **Current status: setup phase only.** This repository contains the project foundation: a React frontend, an Express backend, Prisma configuration and documentation. **No application features (login, projects, tasks, comments, …) exist yet.**
+> **Current status: Phase 1 complete (Admin, projects & team management).** Admins create, edit, delete and archive projects and assign project managers. Project managers manage their teams. Team members and viewers browse their projects. All data is stored in local PostgreSQL.
+>
+> **Not built yet:** login and passwords (Phase 3), tasks and comments (Phase 2). Until login exists, a **temporary "Viewing as" user switcher** in the header lets you demo each role. **It is not authentication** (see [Development user switcher](#development-user-switcher-temporary)).
 
 ---
 
@@ -13,7 +15,8 @@ A Collaborative Project Management Platform for the **NEOSTATS Full Stack Engine
 | Frontend | React 19, Vite 8, Tailwind CSS 4, React Router 7, Axios |
 | Backend | Node.js, Express 5 (ES modules), CORS, dotenv, Nodemon |
 | Database | Local PostgreSQL 16, Prisma ORM 6.19 |
-| Prepared for later | jsonwebtoken (JWT), bcryptjs (password hashing), Zod (validation) |
+| Validation | Zod |
+| Prepared for later | jsonwebtoken (JWT), bcryptjs (password hashing) |
 | Testing | Node's built-in test runner + Supertest |
 | Tools | npm, VS Code, PowerShell, Git/GitHub, Postman |
 
@@ -98,11 +101,29 @@ JWT_SECRET=<the long string printed above>
 
 The other values (`PORT=4000`, `NODE_ENV=development`, `CLIENT_ORIGIN=http://localhost:5173`, `JWT_EXPIRES_IN=1d`) can stay as they are.
 
-### 5. Generate the Prisma Client
+### 5. Create the tables (apply migrations)
+
+```powershell
+npm run prisma:migrate:deploy
+```
+
+This applies the committed migrations in `server/prisma/migrations/`. It never deletes data and also works on a brand-new empty database.
+
+### 6. Generate the Prisma Client
 
 ```powershell
 npm run prisma:generate
 ```
+
+If you get `EPERM: operation not permitted, rename … query_engine-windows.dll.node`, a running backend has the file locked: stop `npm run dev` first, then run the command again.
+
+### 7. Load the demo data
+
+```powershell
+npm run db:seed
+```
+
+Creates 8 users (every role), 5 projects and 7 memberships. Safe to run again: it only adds what is missing and never overwrites existing rows.
 
 ---
 
@@ -137,22 +158,61 @@ Invoke-RestMethod http://localhost:4000/api/health/db
 
 In Postman: create a `GET` request to `http://localhost:4000/api/health`.
 
-In the browser: open http://localhost:5173 and click **Check backend health**.
+(The setup-phase "Check backend health" page was replaced by the real app in Phase 1.)
 
 Full details: [docs/API.md](docs/API.md).
+
+## Using the App
+
+Open http://localhost:5173. You land on the dashboard as **Ada Admin**.
+
+### Development user switcher (temporary)
+
+Use the **Viewing as** dropdown in the top-right corner to switch between the seeded users. The app sends the chosen user's id to the API in an `X-Dev-User-Id` header. The server looks the user up in the database and applies **that user's real role** to every permission check.
+
+⚠️ This is a **development-only demo tool, not a login**. Anyone could pick any user, and it is switched off when `NODE_ENV=production`. Phase 3 replaces it with real authentication (passwords + JWT).
+
+| Role | Name | Email (no password yet) | What to try |
+|---|---|---|---|
+| Admin | Ada Admin | admin@neostats.local | Create a project, assign a manager to **Customer Portal**, edit, archive, delete, browse **Users** |
+| Project Manager | Priya Sharma | priya.pm@neostats.local | Sees *Website Redesign* and *Mobile App Launch* only; add/remove team members, change a member's project role |
+| Project Manager | Marcus Lee | marcus.pm@neostats.local | Manages *Data Warehouse Migration* and the archived *Legacy CRM Sunset* |
+| Team Member | Aisha Khan | aisha@neostats.local | Sees only her projects and teammates (read-only) |
+| Team Member | Ben Carter / Chloe Martin / Diego Ramos | ben@ / chloe@ / diego@neostats.local | Diego is a *read-only* member of Data Warehouse Migration |
+| Viewer | Vera Viewer | viewer@neostats.local | Sees all projects read-only, with no action buttons |
+
+### Who can do what (enforced by the server)
+
+| Action | Admin | Project Manager | Team Member | Viewer |
+|---|---|---|---|---|
+| See projects | all | projects they manage | projects they belong to | all, read-only |
+| Create / delete projects | ✅ | ❌ | ❌ | ❌ |
+| Edit name, description, status | ✅ | own projects | ❌ | ❌ |
+| Assign project manager | ✅ | ❌ | ❌ | ❌ |
+| Add / remove members, change member role | ✅ | own projects | ❌ | ❌ |
+
+Only users with the global **Project Manager** role can be assigned as managers. Only **Team Members** can be added to teams. Removing a member deletes the membership, not the user. Deleting a project also deletes its memberships. An archived project's team is frozen until the project is un-archived.
+
+API reference: [docs/API.md](docs/API.md).
 
 ## Tests
 
 ```powershell
-npm test
+npm test               # backend: 63 API + database tests
+npm run test:client    # frontend: 11 unit tests (form validation, role navigation)
+npm run test:all       # both
+npm run lint:client    # linter
+npm run build:client   # production build
 ```
 
-Runs the backend tests in `server/tests/` (health endpoint, 404 handler, invalid JSON, CORS). These do not need the database.
+The backend tests need PostgreSQL running, but they **never touch your development data**. They use a separate database, `neostats_project_manager_test`, on the same server. `npm test` creates it automatically if it is missing and applies the migrations to it. The tests empty that database between runs, and the helper refuses to run against any database whose name does not end in `_test`. To use a different test database, set `TEST_DATABASE_URL` in `server/.env`.
 
 ## Prisma and Migrations
 
 | Task | Command (repo root) |
 |---|---|
+| Apply committed migrations (safe, no data loss) | `npm run prisma:migrate:deploy` |
+| Seed demo data (idempotent) | `npm run db:seed` |
 | Validate schema | `npm run prisma:validate` |
 | Format schema | `npm run prisma:format` |
 | Generate client | `npm run prisma:generate` |
@@ -160,11 +220,13 @@ Runs the backend tests in `server/tests/` (health endpoint, 404 handler, invalid
 | Create + apply a migration (development) | `npm run prisma:migrate:dev -- --name <short_name>` |
 | Browse data | `npm run prisma:studio` |
 
-The schema (`server/prisma/schema.prisma`) has **no models yet**, so no migration has been created. When models are added:
+The schema (`server/prisma/schema.prisma`) defines `User`, `Project` and `ProjectMember`. Current migration: `20261023080509_init_users_projects_members`.
+
+To change the schema later:
 
 1. Edit `server/prisma/schema.prisma`.
 2. Confirm the DB is reachable: `/api/health/db` returns `connected`.
-3. Run `npm run prisma:migrate:dev -- --name init` (creates `server/prisma/migrations/…` and applies it).
+3. Run `npm run prisma:migrate:dev -- --name <short_name>` (creates a new folder in `server/prisma/migrations/` and applies it).
 4. Commit the schema **and** the migrations folder together.
 
 ⚠️ `prisma migrate reset` and `prisma db push` can delete data. Do not run them without a deliberate decision.
@@ -184,6 +246,10 @@ The schema (`server/prisma/schema.prisma`) has **no models yet**, so no migratio
 | Vite: `Port 5173 is in use` | `strictPort` is on. Stop the other Vite process (the backend's CORS expects 5173). |
 | Browser CORS error | `CLIENT_ORIGIN` in `server/.env` must exactly match the frontend URL (`http://localhost:5173`). |
 | Frontend calls `undefined/health` | `client/.env` missing. Copy it from `.env.example` and restart Vite. |
+| App says "No users in the database" | Run `npm run db:seed`. |
+| App says "Cannot reach the API server" | Start the backend (`npm run dev` or `npm run dev:server`). |
+| `npm test` fails with "Could not prepare neostats_project_manager_test" | PostgreSQL 16 is not running, or the `DATABASE_URL` user is not allowed to create databases. |
+| `prisma generate` fails with `EPERM … rename` | Stop the running backend (it locks the engine file), then retry. |
 | Changed `.env` but nothing happened | Restart the dev server (Vite only reads `.env` at startup). |
 | `npm audit` reports high severity issues | They come from dev-only tools (nodemon → chokidar/braces, Prisma CLI → deepmerge-ts), not the running API. `npm audit fix --force` would downgrade nodemon / upgrade Prisma to 7, so don't run it. |
 
@@ -193,20 +259,18 @@ The schema (`server/prisma/schema.prisma`) has **no models yet**, so no migratio
 
 | Item | Status |
 |---|---|
-| Dependencies install (root, client, server) | ✅ Verified |
-| Frontend production build | ✅ Verified |
-| Frontend dev server serves the placeholder page (HTTP 200) | ✅ Verified |
-| Backend starts and logs its port | ✅ Verified |
-| `GET /api/health` returns 200 | ✅ Verified |
-| 404 JSON for unknown routes | ✅ Verified |
-| CORS allows `http://localhost:5173` | ✅ Verified |
-| Backend tests (4) | ✅ Verified |
-| `npm run dev` runs both apps | ✅ Verified |
-| Prisma schema valid, client generated | ✅ Verified |
-| `.env` files ignored by Git | ✅ Verified |
-| Database `neostats_project_manager` exists | ⏳ Manual step (README step 3) |
-| `GET /api/health/db` returns `connected` | ⏳ Unverified (needs your credentials) |
-| "Check backend health" button clicked in a real browser | ⏳ Unverified |
-| Authentication, users, projects, membership, tasks, comments, conflict detection, seed data | ❌ Not implemented (future phases) |
+| Setup: install, build, dev servers, health checks, CORS, `.env` handling | ✅ Verified |
+| Database `neostats_project_manager` exists, `/api/health/db` returns `connected` | ✅ Verified |
+| Models User / Project / ProjectMember + first migration | ✅ Verified |
+| Seed data for all four roles (idempotent) | ✅ Verified |
+| Projects API: list (filters + pagination), view, create, update, archive, delete | ✅ Verified (tests + manual) |
+| Project manager assignment (Project Manager role only) | ✅ Verified |
+| Team API: list, add, change project role, remove; duplicates rejected | ✅ Verified |
+| Server-side permission checks per role | ✅ Verified (tests) |
+| React UI: dashboard, projects, create/edit, details, team management, users list, user switcher | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
+| Backend tests (63) and frontend unit tests (11) | ✅ Passing |
+| Login, passwords, JWT (Phase 3) | ❌ Not implemented. A temporary user switcher is used instead |
+| User create / edit / deactivate (Phase 3) | ❌ Not implemented (read-only list only) |
+| Tasks, comments, concurrent-update conflicts (Phase 2) | ❌ Not implemented |
 
 Architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
