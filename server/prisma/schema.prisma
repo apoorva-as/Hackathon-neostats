@@ -1,0 +1,15 @@
+// Prisma schema for the NEOSTATS Project Management Platform.
+// Docs: https://www.prisma.io/docs/orm/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Domain models (User, Project, ProjectMember, Task, Comment) are intentionally
+// NOT defined yet. They come in the next development phase and will be applied
+// with: npm run prisma:migrate:dev -- --name <migration-name>

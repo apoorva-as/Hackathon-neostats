@@ -1,0 +1,27 @@
+{
+  "name": "neostats-project-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NEOSTATS Full Stack Engineering Hackathon - Collaborative Project Management Platform",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server",
+    "dev": "concurrently --names server,client --prefix-colors blue,magenta \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build:client": "npm --prefix client run build",
+    "lint:client": "npm --prefix client run lint",
+    "test": "npm --prefix server test",
+    "prisma:validate": "npm --prefix server run prisma:validate",
+    "prisma:format": "npm --prefix server run prisma:format",
+    "prisma:generate": "npm --prefix server run prisma:generate",
+    "prisma:migrate:dev": "npm --prefix server run prisma:migrate:dev --",
+    "prisma:migrate:status": "npm --prefix server run prisma:migrate:status",
+    "prisma:studio": "npm --prefix server run prisma:studio"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.6"
+  }
+}
