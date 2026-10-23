@@ -11,22 +11,41 @@ Stack traces and SQL errors are never sent to the client; they are logged on the
 
 ---
 
-## Current user (TEMPORARY, until Phase 3)
+## Authentication
 
-There is no login yet. Every `/projects`, `/tasks` and `/users` request must send the id of a seeded user:
+Every route except `/api/health*`, `POST /api/auth/login` and `POST /api/auth/logout` needs a signed-in user.
 
-```
-X-Dev-User-Id: 1
-```
-
-The server loads that user **from the database** and uses its real role for all permission checks. The client never sends a role. **This is a development demo mechanism, not authentication.** It is disabled when `NODE_ENV=production`. Phase 3 replaces it with `Authorization: Bearer <JWT>`.
+- **Mechanism:** `POST /api/auth/login` sets the cookie `neostats_session` (**HttpOnly**, **SameSite=Strict**, `Path=/`, `Secure` when `NODE_ENV=production`, lifetime = `JWT_EXPIRES_IN`, default 8h). It holds a JWT (HS256) with only `{ sub: userId, ver: tokenVersion }`. Browsers send it automatically (Axios uses `withCredentials: true`). The token is never returned in a response body, and `Authorization: Bearer` headers are **not** accepted (cookie-only, one consistent mechanism).
+- **Per request** (`requireAuth`): verify signature + expiry → load the user from PostgreSQL → reject if missing, deactivated, or `tokenVersion` differs → `req.actor = { id, name, email, role, isActive, createdAt }`. Roles always come from the database; ids/roles sent by the client (body, query, headers such as the removed `X-Dev-User-Id`) are ignored.
+- **Invalidation:** logout, deactivation and admin password resets increment `users.tokenVersion`, so **all** earlier tokens of that user stop working immediately (all sessions, not only the current one).
+- **CSRF:** SameSite=Strict cookie + CORS limited to `CLIENT_ORIGIN` with credentials + any non-GET request carrying a foreign `Origin` header is refused with **403 `FORBIDDEN_ORIGIN`**.
 
 | Status | Code | When |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | Header missing, not a positive integer, or user does not exist |
-| 403 | `USER_INACTIVE` | The user is deactivated |
+| 401 | `UNAUTHENTICATED` | No cookie; invalid, tampered or expired token; user deleted or deactivated; token invalidated by logout/password reset |
+| 403 | `FORBIDDEN` | Signed in, but the role / project relationship does not allow the action |
+| 403 | `FORBIDDEN_ORIGIN` | State-changing request from a foreign browser origin |
 
-Permission failures on individual routes return **403 `FORBIDDEN`**.
+### POST `/api/auth/login`
+
+Body: `{ "email": "admin@neostats.local", "password": "…" }` (strict; email trimmed + lowercased).
+
+**200** `{ data: { id, name, email, role, isActive, createdAt } }` + `Set-Cookie: neostats_session=…; HttpOnly; SameSite=Strict`
+· **400** `VALIDATION_ERROR` (missing/malformed fields, unknown fields)
+· **401** `INVALID_CREDENTIALS` "Invalid email or password." (same answer for unknown email, wrong password, or an account without a password; bcrypt runs in every case so timing does not reveal accounts)
+· **403** `ACCOUNT_DEACTIVATED` (only after a correct password; no cookie is set).
+
+### GET `/api/auth/me`
+
+**200** `{ data: { id, name, email, role, isActive, createdAt } }` read from the database. **401** without a valid session.
+
+### GET `/api/auth/demo-accounts` (development only)
+
+Public list for the login page's account picker: `{ data: [{ id, name, email, role }] }` for **active** users that **have a password**, ordered by role then name. No password data. Returns **404** when `NODE_ENV=production`, because listing accounts to anonymous visitors reveals who has an account. Choosing an account grants nothing: `POST /api/auth/login` still checks the password, and the role always comes from the database.
+
+### POST `/api/auth/logout`
+
+Invalidates the session if the cookie is still valid (increments `tokenVersion`, which signs the user out of **all** sessions) and always clears the cookie with the same attributes. **200** `{ data: { loggedOut: true } }`, also without a cookie.
 
 ---
 
@@ -291,6 +310,8 @@ The comment must belong to that task (otherwise **404 `COMMENT_NOT_FOUND`**). **
 
 ## Users
 
+User objects returned by the Admin endpoints below: `{ id, name, email, role, isActive, createdAt }`. `passwordHash` and `tokenVersion` are never returned. There is **no DELETE**: users are deactivated.
+
 ### GET `/api/users` (Admin, Project Manager)
 
 Directory used to pick project managers and team members. Returns only `id`, `name`, `email`, `role`, `isActive`.
@@ -304,9 +325,30 @@ Directory used to pick project managers and team members. Returns only `id`, `na
 
 **200** `{ data: User[], meta }` · **400** · **403** Team Member / Viewer.
 
-### GET `/api/dev/users` (TEMPORARY)
+### GET `/api/users/:id` (Admin)
 
-Active users for the development user switcher. Needs no header. Returns **404** when `NODE_ENV=production`. Removed in Phase 3.
+**200** · **403** · **404** `USER_NOT_FOUND`.
+
+### POST `/api/users` (Admin)
+
+Body (strict): `{ name (1-100), email, password, role }`. Password policy: 8+ characters, at least one letter and one digit, at most 72 bytes (bcrypt limit). Stored as a bcrypt hash (cost `BCRYPT_ROUNDS`, default 12).
+
+**201** · **400** `VALIDATION_ERROR` · **403** · **409** `EMAIL_TAKEN` (case-insensitive).
+
+### PATCH `/api/users/:id` (Admin)
+
+Body (strict, at least one field): `{ name?, email?, role?, isActive?, password? }`.
+
+- `isActive: false` deactivates (the user is signed out everywhere and cannot log in); `isActive: true` reactivates.
+- `password` resets the password and signs the user out everywhere.
+- An Admin cannot change **their own** role or deactivate **themselves** (403), so the acting Admin can never lock themselves out. Non-admins get 403 for every change, including their own role (no self-promotion).
+- Changing the role of a user who still manages projects (PM) or belongs to teams (Team Member) → **409 `USER_HAS_ASSIGNMENTS`** (managers must be PMs, members must be Team Members).
+
+**200** · **400** · **403** · **404** `USER_NOT_FOUND` · **409** `EMAIL_TAKEN` / `USER_HAS_ASSIGNMENTS`.
+
+### `/api/dev/users`: removed
+
+The Phase 1/2 development user switcher (`GET /api/dev/users`, `X-Dev-User-Id`) was removed in Phase 3. The route returns 404, and the header is ignored.
 
 ---
 
@@ -341,19 +383,13 @@ Runs a real `SELECT 1` query through Prisma against the database configured in `
 | 400 | `INVALID_JSON` | Request body is not valid JSON |
 | 400 | `VALIDATION_ERROR` | Params / query / body failed validation. `details: [{ location, path, message }]` |
 | 400 | `INVALID_REFERENCE` | A referenced record does not exist (database foreign key) |
-| 401 | `UNAUTHENTICATED` | No current user (see above) |
+| 401 | `UNAUTHENTICATED` | No valid session (see Authentication) |
+| 401 | `INVALID_CREDENTIALS` | Login with a wrong email/password |
+| 403 | `ACCOUNT_DEACTIVATED` | Login to a deactivated account (correct password) |
+| 403 | `FORBIDDEN_ORIGIN` | Write request from a foreign browser origin |
 | 403 | `FORBIDDEN` | The current user's role / project relationship does not allow this |
 | 404 | `NOT_FOUND` | No route matches, or a record is missing |
 | 409 | `CONFLICT` | A unique constraint was violated |
 | 409 | `VERSION_CONFLICT` | Task update with a stale `version` (see PATCH `/api/tasks/:id`) |
 | 409 | `PROJECT_ARCHIVED` | Writing to the team, tasks or comments of an archived project |
 | 500 | `INTERNAL_SERVER_ERROR` | Unexpected server error (generic message; details only in the server log) |
-
----
-
-## Planned endpoints (NOT implemented)
-
-| Area | Planned routes |
-|---|---|
-| Auth (Phase 3) | `POST /api/auth/login`, `GET /api/auth/me` |
-| Users (Phase 3) | `POST /api/users`, `PATCH /api/users/:id` (incl. deactivate) |

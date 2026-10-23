@@ -10,7 +10,7 @@ import {
   updateTaskSchema,
 } from '../validators/task.validator.js'
 
-// Mounted at /api/tasks (behind requireDevActor, see routes/index.js).
+// Mounted at /api/tasks (behind requireAuth, see routes/index.js).
 // Creating tasks lives under /api/projects/:id/tasks (project.routes.js).
 // Permission checks happen in the services via policies/task.policy.js.
 const router = Router()

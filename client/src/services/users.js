@@ -5,8 +5,14 @@ export async function listUsers(params = {}) {
   return { items: data.data, meta: data.meta }
 }
 
-// TEMPORARY (Phase 1): users for the development user switcher.
-export async function listDevUsers() {
-  const { data } = await api.get('/dev/users')
+// Admin only (the server enforces it).
+export async function createUser(values) {
+  const { data } = await api.post('/users', values)
+  return data.data
+}
+
+// Admin only. { isActive: false } deactivates; { password } resets it.
+export async function updateUser(id, values) {
+  const { data } = await api.patch(`/users/${id}`, values)
   return data.data
 }

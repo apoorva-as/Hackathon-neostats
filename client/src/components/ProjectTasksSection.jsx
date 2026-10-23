@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useDevUser } from '../context/DevUserContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { listProjectTasks } from '../services/tasks.js'
 import { TASK_STATUSES, TASK_STATUS_LABELS } from '../utils/labels.js'
@@ -13,7 +13,7 @@ const PAGE_SIZE = 20
 // Task list on the project details page, with status / "mine" filters.
 // "New task" only appears when the API says the user may manage tasks.
 export default function ProjectTasksSection({ project }) {
-  const { currentUser } = useDevUser()
+  const { currentUser } = useAuth()
   const [status, setStatus] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
   const [page, setPage] = useState(1)

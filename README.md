@@ -2,9 +2,7 @@
 
 A Collaborative Project Management Platform for the **NEOSTATS Full Stack Engineering Hackathon**.
 
-> **Current status: Phase 2 complete (tasks, comments & concurrent-edit detection)** on top of Phase 1 (projects & team management). Admins manage projects and assign project managers. Project managers manage their teams and tasks (create, assign, edit, delete). Team members update the status and description of tasks assigned to them and comment. Viewers read everything. Stale task edits are rejected with **HTTP 409** instead of overwriting. All data is stored in local PostgreSQL.
->
-> **Not built yet:** login and passwords (Phase 3). Until login exists, a **temporary "Viewing as" user switcher** in the header lets you demo each role. **It is not authentication** (see [Development user switcher](#development-user-switcher-temporary)).
+> **Current status: Phase 3 complete (authentication, authorization & user management)** on top of Phase 2 (tasks, comments, concurrent-edit detection) and Phase 1 (projects & team management). Users sign in with email + password. The session is an HttpOnly cookie, and every API permission is checked on the server against the user's role **from the database**. Admins manage users and projects and assign project managers. Project managers manage their teams and tasks. Team members update the status and description of tasks assigned to them and comment. Viewers read everything. Stale task edits are rejected with **HTTP 409** instead of overwriting. All data is stored in local PostgreSQL.
 
 ---
 
@@ -16,7 +14,7 @@ A Collaborative Project Management Platform for the **NEOSTATS Full Stack Engine
 | Backend | Node.js, Express 5 (ES modules), CORS, dotenv, Nodemon |
 | Database | Local PostgreSQL 16, Prisma ORM 6.19 |
 | Validation | Zod |
-| Prepared for later | jsonwebtoken (JWT), bcryptjs (password hashing) |
+| Authentication | jsonwebtoken (JWT in an HttpOnly cookie), bcryptjs (password hashing) |
 | Testing | Node's built-in test runner + Supertest |
 | Tools | npm, VS Code, PowerShell, Git/GitHub, Postman |
 
@@ -99,7 +97,9 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 JWT_SECRET=<the long string printed above>
 ```
 
-The other values (`PORT=4000`, `NODE_ENV=development`, `CLIENT_ORIGIN=http://localhost:5173`, `JWT_EXPIRES_IN=1d`) can stay as they are.
+The server **refuses to start** if `JWT_SECRET` is missing, still the placeholder, or shorter than 32 characters (there is no fallback secret).
+
+The other values (`PORT=4000`, `NODE_ENV=development`, `CLIENT_ORIGIN=http://localhost:5173`, `JWT_EXPIRES_IN=8h`, `BCRYPT_ROUNDS=12`) can stay as they are. `SEED_DEMO_PASSWORD` is optional (see step 7).
 
 ### 5. Create the tables (apply migrations)
 
@@ -123,7 +123,9 @@ If you get `EPERM: operation not permitted, rename … query_engine-windows.dll.
 npm run db:seed
 ```
 
-Creates 8 users (every role), 5 projects, 7 memberships, 5 tasks and 3 comments. Safe to run again: it only adds what is missing and never overwrites existing rows.
+Creates 9 users (every role + one deactivated account), 5 projects, 7 memberships, 5 tasks and 3 comments. Safe to run again: it only adds what is missing and never overwrites existing rows.
+
+Every demo account gets the **development-only demo password `Neostats@123`** (or the value of `SEED_DEMO_PASSWORD` in `server/.env`). Only a bcrypt hash is stored. A password is set only on accounts that **have none yet** (e.g. users created before Phase 3), so existing passwords and roles are never overwritten. The seed refuses to run when `NODE_ENV=production`.
 
 ---
 
@@ -164,24 +166,33 @@ Full details: [docs/API.md](docs/API.md).
 
 ## Using the App
 
-Open http://localhost:5173. You land on the dashboard as **Ada Admin**.
+Open http://localhost:5173 and sign in. (Use `localhost`, not `127.0.0.1`: the session cookie is `SameSite=Strict`, and the frontend and API must be on the same site.)
 
-### Development user switcher (temporary)
+### Demo accounts (development only)
 
-Use the **Viewing as** dropdown in the top-right corner to switch between the seeded users. The app sends the chosen user's id to the API in an `X-Dev-User-Id` header. The server looks the user up in the database and applies **that user's real role** to every permission check.
+All demo accounts use the password **`Neostats@123`**. In development the login page's **Account** field is a searchable dropdown of all active accounts (name, email, role), loaded from `GET /api/auth/demo-accounts`. Pick one, type the password, sign in. The yellow box also offers one quick pick per role. In production that endpoint is disabled (404) and the page shows a normal email field. **Never use these accounts or this password outside local development.**
 
-⚠️ This is a **development-only demo tool, not a login**. Anyone could pick any user, and it is switched off when `NODE_ENV=production`. Phase 3 replaces it with real authentication (passwords + JWT).
-
-| Role | Name | Email (no password yet) | What to try |
+| Role | Name | Email | What to try |
 |---|---|---|---|
 | Admin | Ada Admin | admin@neostats.local | Create a project, assign a manager to **Customer Portal**, edit, archive, delete, browse **Users**; read all tasks, delete (moderate) comments |
 | Project Manager | Priya Sharma | priya.pm@neostats.local | Sees *Website Redesign* and *Mobile App Launch* only; manage the team; **New task**, assign/reassign, edit, delete tasks |
 | Project Manager | Marcus Lee | marcus.pm@neostats.local | Manages *Data Warehouse Migration* and the archived *Legacy CRM Sunset* (read-only) |
 | Team Member | Aisha Khan | aisha@neostats.local | Dashboard shows *her* open tasks; on her task: change status/description, comment |
 | Team Member | Ben Carter / Chloe Martin / Diego Ramos | ben@ / chloe@ / diego@neostats.local | Diego is a *read-only* member of Data Warehouse Migration (can read, not comment) |
-| Viewer | Vera Viewer | viewer@neostats.local | Sees all projects, tasks and comments read-only, with no action buttons |
+| Viewer | Vera Viewer | viewer@neostats.local | Sees all projects, tasks and comments read-only (blue "Read-only access" banner, no action buttons) |
+| *(deactivated)* | Ivan Inactive | inactive@neostats.local | Login is refused: "This account has been deactivated" |
 
-**Try the conflict check:** open the same task as Priya and keep the edit form open. Switch to Aisha in a second browser tab and change the task's status there. Back in the first tab, save: you get *"This task changed since you opened it"* and a **Reload the latest version** button. Nothing is overwritten. (The user switcher is stored per browser, so after switching in tab 2, tab 1 keeps its already-loaded page until reload.)
+Admins manage accounts on **Users**: create (name, email, role, password), edit, reset a password, deactivate / reactivate. Deactivating a user or resetting their password signs them out everywhere immediately. An Admin cannot change their own role or deactivate themselves. A role change is refused (409) while the user still manages projects or belongs to teams, because managers must be Project Managers and team members must be Team Members.
+
+**Try the conflict check:** sign in as Priya in a normal window and open *Design new homepage hero* in edit mode. Sign in as Aisha in a **private/incognito window** (a separate cookie jar) and change that task's status. Back in Priya's window, save: you get *"This task changed since you opened it"* and a **Reload the latest version** button. Nothing is overwritten.
+
+### Authentication in short
+
+- `POST /api/auth/login` checks the bcrypt hash and sets an **HttpOnly, SameSite=Strict** cookie (`Secure` in production) holding a signed JWT (HS256, 8 h). The token is never in the response body or in `localStorage`.
+- On every protected request the server verifies the token, then **loads the user from the database**. Deleted or deactivated users, and tokens whose version no longer matches, get **401**. The role used for permissions always comes from the database, never from the token or the client.
+- `POST /api/auth/logout` increments the user's `tokenVersion`. This **invalidates all of that user's sessions** (every browser/device), not only the current one. Deactivation and admin password resets do the same.
+- Writes from a foreign `Origin` are rejected (403) as CSRF defence in depth; CORS allows credentials only from `CLIENT_ORIGIN`.
+- The old "Viewing as" development user switcher (`X-Dev-User-Id`) has been **removed**. The header is ignored.
 
 ### Who can do what (enforced by the server)
 
@@ -192,6 +203,7 @@ Use the **Viewing as** dropdown in the top-right corner to switch between the se
 | Edit name, description, status | ✅ | own projects | ❌ | ❌ |
 | Assign project manager | ✅ | ❌ | ❌ | ❌ |
 | Add / remove members, change member role | ✅ | own projects | ❌ | ❌ |
+| Create / edit / deactivate users, reset passwords | ✅ | ❌ | ❌ | ❌ |
 
 | See tasks and comments | all | own projects | own projects | all, read-only |
 | Create / delete / assign tasks | ❌ | own projects | ❌ | ❌ |
@@ -206,14 +218,14 @@ API reference: [docs/API.md](docs/API.md).
 ## Tests
 
 ```powershell
-npm test               # backend: 101 API + database tests (incl. 409 conflict tests)
-npm run test:client    # frontend: 19 unit tests (form validation, task payloads, role navigation)
+npm test               # backend: 147 API + database tests (auth, authorization matrix, 409 conflicts)
+npm run test:client    # frontend: 27 unit tests (form validation, task payloads, role navigation, login/user forms)
 npm run test:all       # both
 npm run lint:client    # linter
 npm run build:client   # production build
 ```
 
-The backend tests need PostgreSQL running, but they **never touch your development data**. They use a separate database, `neostats_project_manager_test`, on the same server. `npm test` creates it automatically if it is missing and applies the migrations to it. The tests empty that database between runs, and the helper refuses to run against any database whose name does not end in `_test`. To use a different test database, set `TEST_DATABASE_URL` in `server/.env`.
+The backend tests need PostgreSQL running, but they **never touch your development data**. Each run uses a fresh random `JWT_SECRET`, and every request goes through the real cookie authentication. They use a separate database, `neostats_project_manager_test`, on the same server. `npm test` creates it automatically if it is missing and applies the migrations to it. The tests empty that database between runs, and the helper refuses to run against any database whose name does not end in `_test`. To use a different test database, set `TEST_DATABASE_URL` in `server/.env`.
 
 ## Prisma and Migrations
 
@@ -228,7 +240,7 @@ The backend tests need PostgreSQL running, but they **never touch your developme
 | Create + apply a migration (development) | `npm run prisma:migrate:dev -- --name <short_name>` |
 | Browse data | `npm run prisma:studio` |
 
-The schema (`server/prisma/schema.prisma`) defines `User`, `Project`, `ProjectMember`, `Task` and `Comment`. Migrations: `20261023080509_init_users_projects_members`, `20261023090030_add_tasks_comments` (additive: two new tables and enums).
+The schema (`server/prisma/schema.prisma`) defines `User`, `Project`, `ProjectMember`, `Task` and `Comment`. Migrations: `20261023080509_init_users_projects_members`, `20261023090030_add_tasks_comments` (additive: two new tables and enums), `20261023101615_add_auth_fields` (additive: nullable `users.passwordHash`, `users.tokenVersion` default 0).
 
 To change the schema later:
 
@@ -254,7 +266,9 @@ To change the schema later:
 | Vite: `Port 5173 is in use` | `strictPort` is on. Stop the other Vite process (the backend's CORS expects 5173). |
 | Browser CORS error | `CLIENT_ORIGIN` in `server/.env` must exactly match the frontend URL (`http://localhost:5173`). |
 | Frontend calls `undefined/health` | `client/.env` missing. Copy it from `.env.example` and restart Vite. |
-| App says "No users in the database" | Run `npm run db:seed`. |
+| Login says "Invalid email or password" for a demo account | Run `npm run db:seed` (it adds missing passwords). If you set `SEED_DEMO_PASSWORD`, use that value. |
+| Signed in, but every page sends you back to login | Open the app at `http://localhost:5173` (not `127.0.0.1`) so the cookie is sent; check `CLIENT_ORIGIN`. |
+| Backend exits with `JWT_SECRET is missing or too short` | Set a long random `JWT_SECRET` in `server/.env` (step 4). |
 | App says "Cannot reach the API server" | Start the backend (`npm run dev` or `npm run dev:server`). |
 | `npm test` fails with "Could not prepare neostats_project_manager_test" | PostgreSQL 16 is not running, or the `DATABASE_URL` user is not allowed to create databases. |
 | `prisma generate` fails with `EPERM … rename` | Stop the running backend (it locks the engine file), then retry. |
@@ -275,13 +289,17 @@ To change the schema later:
 | Project manager assignment (Project Manager role only) | ✅ Verified |
 | Team API: list, add, change project role, remove; duplicates rejected | ✅ Verified |
 | Server-side permission checks per role | ✅ Verified (tests) |
-| React UI: dashboard, projects, create/edit, details, team management, users list, user switcher | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
+| React UI: dashboard, projects, create/edit, details, team management | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
 | Tasks: create, list (filters + pagination), view, edit, assign, status, delete | ✅ Verified (tests + manual API checks) |
 | Comments: list, add, delete with role rules | ✅ Verified (tests) |
 | Concurrent-edit detection (`version`, HTTP 409) incl. simultaneous requests | ✅ Verified (tests + manual API check) |
 | Task UI: project task list, create, details/edit, status change, comments, conflict prompt, dashboard tasks | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
-| Backend tests (101) and frontend unit tests (19) | ✅ Passing |
-| Login, passwords, JWT (Phase 3) | ❌ Not implemented. A temporary user switcher is used instead |
-| User create / edit / deactivate (Phase 3) | ❌ Not implemented (read-only list only) |
+| Login, logout, session restore (`/api/auth/me`), HttpOnly cookie JWT, bcrypt passwords | ✅ Verified (tests + manual curl against the dev API) |
+| Session invalidation (logout, deactivation, password reset) | ✅ Verified (tests + manual) |
+| Admin user management: create, edit, reset password, deactivate/reactivate | ✅ API verified (tests); UI builds and lints, not clicked through in a browser |
+| Login page, protected routes, sign-out, profile page, read-only banner for Viewers | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
+| Backend tests (147) and frontend unit tests (27) | ✅ Passing |
+
+**Known limitations:** no login rate limiting / lockout; logout signs the user out of all sessions (by design of the token-version approach); users cannot change their own password (an Admin resets it); no "forgot password" flow.
 
 Architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -1,8 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router'
-import { DevUserProvider } from './context/DevUserContext.jsx'
+import RequireAuth from './components/RequireAuth.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 import AppLayout from './layouts/AppLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
+import ProfilePage from './pages/ProfilePage.jsx'
 import ProjectCreatePage from './pages/ProjectCreatePage.jsx'
 import ProjectDetailsPage from './pages/ProjectDetailsPage.jsx'
 import ProjectEditPage from './pages/ProjectEditPage.jsx'
@@ -11,12 +14,20 @@ import TaskCreatePage from './pages/TaskCreatePage.jsx'
 import TaskDetailsPage from './pages/TaskDetailsPage.jsx'
 import UsersPage from './pages/UsersPage.jsx'
 
+// /login is public; everything else needs a signed-in user (RequireAuth).
 // Pages decide what each role sees; the API enforces every permission again.
 function App() {
   return (
-    <DevUserProvider>
+    <AuthProvider>
       <Routes>
-        <Route element={<AppLayout />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          element={
+            <RequireAuth>
+              <AppLayout />
+            </RequireAuth>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
@@ -26,10 +37,11 @@ function App() {
           <Route path="/projects/:id/tasks/new" element={<TaskCreatePage />} />
           <Route path="/tasks/:id" element={<TaskDetailsPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
-    </DevUserProvider>
+    </AuthProvider>
   )
 }
 

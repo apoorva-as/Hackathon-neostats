@@ -54,7 +54,7 @@ export function EmptyState({ icon = 'folder', title, children, action }) {
   )
 }
 
-// Shown when the selected development user's role may not use a page.
+// Shown when the signed-in user's role may not use a page (access denied).
 export function NotAllowed({ children = 'Your current role cannot access this page.' }) {
   return (
     <EmptyState icon="lock" title="Not available for this role" action={<Button to="/dashboard" variant="secondary">Back to dashboard</Button>}>

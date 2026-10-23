@@ -13,7 +13,7 @@ import {
 } from '../validators/project.validator.js'
 import { createTaskSchema, listProjectTasksQuerySchema } from '../validators/task.validator.js'
 
-// Mounted at /api/projects (behind requireDevActor, see routes/index.js).
+// Mounted at /api/projects (behind requireAuth, see routes/index.js).
 // Permission checks happen in the services via policies/project.policy.js.
 const router = Router()
 

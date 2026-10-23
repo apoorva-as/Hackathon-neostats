@@ -72,6 +72,7 @@ describe('seed script', () => {
     const expectedMemberships = SEED_PROJECTS.reduce((n, p) => n + p.members.length, 0)
     assert.deepEqual(counts, {
       usersCreated: SEED_USERS.length,
+      passwordsSet: 0,
       projectsCreated: SEED_PROJECTS.length,
       membershipsCreated: expectedMemberships,
       tasksCreated: SEED_TASKS.length,
@@ -91,6 +92,7 @@ describe('seed script', () => {
     const second = await runSeed(prisma)
     assert.deepEqual(second, {
       usersCreated: 0,
+      passwordsSet: 0,
       projectsCreated: 0,
       membershipsCreated: 0,
       tasksCreated: 0,

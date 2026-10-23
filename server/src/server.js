@@ -1,6 +1,14 @@
 // Entry point: starts the HTTP server.
 import app from './app.js'
-import { env } from './config/env.js'
+import { assertAuthConfig, env } from './config/env.js'
+
+// Refuse to start without a real JWT secret (no insecure fallback).
+try {
+  assertAuthConfig()
+} catch (err) {
+  console.error(`[config] ${err.message}`)
+  process.exit(1)
+}
 
 const server = app.listen(env.PORT, () => {
   console.log(`NEOSTATS API running on http://localhost:${env.PORT} (${env.NODE_ENV})`)

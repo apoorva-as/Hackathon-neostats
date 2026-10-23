@@ -4,7 +4,7 @@ import Button from '../components/Button.jsx'
 import { Alert, EmptyState, Spinner } from '../components/Feedback.jsx'
 import PageHeader, { Card } from '../components/PageHeader.jsx'
 import TaskList from '../components/TaskList.jsx'
-import { useDevUser } from '../context/DevUserContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { listProjects } from '../services/projects.js'
 import { listTasks } from '../services/tasks.js'
@@ -44,7 +44,7 @@ function TasksCard({ user }) {
 
 // Role-aware overview: simple counts, recent projects and open tasks.
 export default function DashboardPage() {
-  const { currentUser } = useDevUser()
+  const { currentUser } = useAuth()
   const { data, loading, error, reload } = useApi(() => listProjects({ limit: 100 }), [])
   const projects = data?.items ?? []
   const counts = Object.fromEntries(PROJECT_STATUSES.map((s) => [s, projects.filter((p) => p.status === s).length]))

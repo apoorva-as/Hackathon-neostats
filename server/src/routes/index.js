@@ -1,7 +1,7 @@
 // Mounts every feature router under /api. Add new feature routers here.
 import { Router } from 'express'
-import { requireDevActor } from '../middleware/devActor.js'
-import devRoutes from './dev.routes.js'
+import { requireAuth } from '../middleware/auth.js'
+import authRoutes from './auth.routes.js'
 import healthRoutes from './health.routes.js'
 import projectRoutes from './project.routes.js'
 import taskRoutes from './task.routes.js'
@@ -10,14 +10,12 @@ import userRoutes from './user.routes.js'
 const router = Router()
 
 router.use('/health', healthRoutes)
+router.use('/auth', authRoutes)
 
-// TEMPORARY (Phase 1): development user switcher support. Not authentication.
-router.use('/dev', devRoutes)
-
-// Feature routes need a current user (req.actor). In Phase 3, requireDevActor
-// is replaced by a JWT-based requireAuth middleware.
-router.use('/users', requireDevActor, userRoutes)
-router.use('/projects', requireDevActor, projectRoutes)
-router.use('/tasks', requireDevActor, taskRoutes)
+// Everything below needs a signed-in user: requireAuth verifies the session
+// cookie and loads the user from the database into req.actor.
+router.use('/users', requireAuth, userRoutes)
+router.use('/projects', requireAuth, projectRoutes)
+router.use('/tasks', requireAuth, taskRoutes)
 
 export default router

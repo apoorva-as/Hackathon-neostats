@@ -2,14 +2,14 @@ import { useNavigate } from 'react-router'
 import { Alert, NotAllowed, Spinner } from '../components/Feedback.jsx'
 import PageHeader from '../components/PageHeader.jsx'
 import ProjectForm from '../components/ProjectForm.jsx'
-import { useDevUser } from '../context/DevUserContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { createProject } from '../services/projects.js'
 import { listUsers } from '../services/users.js'
 import { canCreateProject } from '../utils/permissions.js'
 
 export default function ProjectCreatePage() {
-  const { currentUser } = useDevUser()
+  const { currentUser } = useAuth()
   const navigate = useNavigate()
   const allowed = canCreateProject(currentUser)
   const managers = useApi(

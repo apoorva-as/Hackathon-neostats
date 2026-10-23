@@ -17,23 +17,23 @@ beforeEach(async () => {
 
 after(() => prisma.$disconnect())
 
-describe('dev user switcher (temporary, not authentication)', () => {
-  test('requests without X-Dev-User-Id are rejected with 401', async () => {
+describe('authentication on /api/projects', () => {
+  test('requests without a session cookie are rejected with 401', async () => {
     const res = await request(app).get('/api/projects')
     assert.equal(res.status, 401)
     assert.equal(res.body.error.code, 'UNAUTHENTICATED')
   })
 
-  test('an unknown user id is rejected with 401', async () => {
-    const res = await request(app).get('/api/projects').set('X-Dev-User-Id', '99999')
+  test('the removed X-Dev-User-Id header no longer authenticates anyone (401)', async () => {
+    const res = await request(app).get('/api/projects').set('X-Dev-User-Id', String(admin.id))
     assert.equal(res.status, 401)
   })
 
-  test('a deactivated user is rejected with 403', async () => {
+  test('a deactivated user is rejected with 401 even with a signed token', async () => {
     const inactive = await createUser('ADMIN', { isActive: false })
     const res = await request(app).get('/api/projects').set(as(inactive))
-    assert.equal(res.status, 403)
-    assert.equal(res.body.error.code, 'USER_INACTIVE')
+    assert.equal(res.status, 401)
+    assert.equal(res.body.error.code, 'UNAUTHENTICATED')
   })
 })
 

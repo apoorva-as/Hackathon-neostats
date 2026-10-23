@@ -6,7 +6,7 @@ import { inputClass } from '../components/FormField.jsx'
 import Icon from '../components/Icon.jsx'
 import PageHeader from '../components/PageHeader.jsx'
 import ProjectList from '../components/ProjectList.jsx'
-import { useDevUser } from '../context/DevUserContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { listProjects } from '../services/projects.js'
 import { PROJECT_STATUSES, STATUS_LABELS } from '../utils/labels.js'
@@ -15,7 +15,7 @@ import { canCreateProject, projectsHeading } from '../utils/permissions.js'
 const PAGE_SIZE = 10
 
 export default function ProjectsPage() {
-  const { currentUser } = useDevUser()
+  const { currentUser } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [notice, setNotice] = useState(location.state?.notice ?? null)

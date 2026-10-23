@@ -2,7 +2,7 @@ import * as commentService from '../services/comment.service.js'
 import * as taskService from '../services/task.service.js'
 
 // Controllers only read the validated request (req.valid), call a service and
-// send the response. req.actor is set by the requireDevActor middleware.
+// send the response. req.actor is set by the requireAuth middleware.
 
 export async function listProjectTasks(req, res) {
   const { tasks, meta } = await taskService.listProjectTasks(req.actor, req.valid.params.id, req.valid.query)

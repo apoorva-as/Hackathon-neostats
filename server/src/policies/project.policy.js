@@ -1,7 +1,7 @@
 // Permission rules for projects and memberships, in one place.
 // Every function receives the `actor` (the current user loaded from the DB:
 // { id, role }) and returns true/false. Services call these and throw 403.
-// Phase 3 keeps these rules; only how `actor` is obtained changes.
+// `actor` is set by requireAuth (src/middleware/auth.js) from the database.
 
 export const ROLES = Object.freeze({
   ADMIN: 'ADMIN',

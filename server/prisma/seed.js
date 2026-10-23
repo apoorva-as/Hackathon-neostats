@@ -5,10 +5,20 @@
 // Idempotent: running it again creates nothing new and never overwrites
 // existing rows (users are matched by email, projects by name, memberships
 // by the (projectId, userId) unique key, tasks by (project, title), comments
-// by (task, author, body)). No passwords are created: login
-// arrives in Phase 3.
+// by (task, author, body)).
+//
+// Passwords (Phase 3, DEVELOPMENT ONLY): every demo account gets the demo
+// password (SEED_DEMO_PASSWORD in server/.env, or DEFAULT_DEMO_PASSWORD
+// below), stored only as a bcrypt hash. A password is set ONLY when the
+// account has none yet, so existing passwords and roles are never overwritten.
+// The seed refuses to run when NODE_ENV=production.
 import { pathToFileURL } from 'node:url'
+import { env, isProduction } from '../src/config/env.js'
 import { prisma } from '../src/config/prisma.js'
+import { hashPassword } from '../src/utils/password.js'
+
+// Public, development-only demo password (documented in README.md).
+export const DEFAULT_DEMO_PASSWORD = 'Neostats@123'
 
 export const SEED_USERS = [
   { name: 'Ada Admin', email: 'admin@neostats.local', role: 'ADMIN' },
@@ -19,6 +29,8 @@ export const SEED_USERS = [
   { name: 'Chloe Martin', email: 'chloe@neostats.local', role: 'TEAM_MEMBER' },
   { name: 'Diego Ramos', email: 'diego@neostats.local', role: 'TEAM_MEMBER' },
   { name: 'Vera Viewer', email: 'viewer@neostats.local', role: 'VIEWER' },
+  // Deactivated account: shows that deactivated users cannot sign in.
+  { name: 'Ivan Inactive', email: 'inactive@neostats.local', role: 'TEAM_MEMBER', isActive: false },
 ]
 
 // managerEmail null = unassigned (lets the Admin demo manager assignment).
@@ -126,19 +138,38 @@ export const SEED_TASKS = [
   },
 ]
 
-export async function runSeed(client = prisma) {
-  const counts = { usersCreated: 0, projectsCreated: 0, membershipsCreated: 0, tasksCreated: 0, commentsCreated: 0 }
+export async function runSeed(client = prisma, { password = env.SEED_DEMO_PASSWORD || DEFAULT_DEMO_PASSWORD } = {}) {
+  if (isProduction) {
+    throw new Error('Refusing to seed demo accounts when NODE_ENV=production.')
+  }
+  const counts = {
+    usersCreated: 0,
+    passwordsSet: 0,
+    projectsCreated: 0,
+    membershipsCreated: 0,
+    tasksCreated: 0,
+    commentsCreated: 0,
+  }
   const projectIdByName = new Map()
   const userIdByEmail = new Map()
 
   for (const user of SEED_USERS) {
     const email = user.email.trim().toLowerCase()
-    const existing = await client.user.findUnique({ where: { email }, select: { id: true } })
+    const existing = await client.user.findUnique({ where: { email }, select: { id: true, passwordHash: true } })
     if (existing) {
-      userIdByEmail.set(email, existing.id) // keep existing data untouched
+      userIdByEmail.set(email, existing.id)
+      // Keep name/role/active flag untouched; only fill in a MISSING password
+      // (accounts seeded before Phase 3 have none and could not log in).
+      if (!existing.passwordHash) {
+        await client.user.update({ where: { id: existing.id }, data: { passwordHash: await hashPassword(password) } })
+        counts.passwordsSet++
+      }
       continue
     }
-    const created = await client.user.create({ data: { ...user, email }, select: { id: true } })
+    const created = await client.user.create({
+      data: { ...user, email, passwordHash: await hashPassword(password) },
+      select: { id: true },
+    })
     userIdByEmail.set(email, created.id)
     counts.usersCreated++
   }
@@ -209,8 +240,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const counts = await runSeed()
     console.log('Seed complete:', counts)
-    console.log('Development users (no passwords; pick them in the app header):')
-    for (const u of SEED_USERS) console.log(`  ${u.role.padEnd(16)} ${u.name.padEnd(14)} ${u.email}`)
+    console.log('Development accounts (sign in with the demo password documented in README.md):')
+    for (const u of SEED_USERS) {
+      const note = u.isActive === false ? ' (deactivated)' : ''
+      console.log(`  ${u.role.padEnd(16)} ${u.name.padEnd(14)} ${u.email}${note}`)
+    }
   } catch (err) {
     console.error('Seed failed:', err.message)
     process.exitCode = 1

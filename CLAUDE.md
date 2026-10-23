@@ -8,8 +8,8 @@ Persistent guide for Claude Code sessions working in this repository. **Read thi
 
 - **Project:** NEOSTATS Project Management Platform (repo: `Hackathon-neostats`, remote `origin` = `https://github.com/apoorva-as/Hackathon-neostats.git`, branch `main`).
 - **Objective:** Build a Collaborative Project Management Platform for the NEOSTATS Full Stack Engineering Hackathon. It covers four roles (Admin, Project Manager, Team Member, Viewer), authentication, authorization, projects, membership, tasks, comments, and detection of concurrent task updates.
-- **Current phase: Phase 2 complete (tasks, comments, concurrent-edit detection)** on top of Phase 1 (projects & team management). See sections N and O.
-- **Not implemented yet:** login/JWT/passwords (Phase 3), user create/edit/deactivate UI (Phase 3). Role switching uses a **temporary development user switcher** that is *not* authentication (section N4).
+- **Current phase: Phase 3 complete (authentication, authorization, user management)** on top of Phase 2 (tasks, comments, concurrent-edit detection) and Phase 1 (projects & team management). See sections N, O and P.
+- **Authentication:** email + password login, JWT in an HttpOnly SameSite=Strict cookie, `tokenVersion` invalidation (section P). The Phase 1–2 dev user switcher has been **removed**.
 - **Hackathon constraints (from the NeoStats brief):**
   - Time limit: **3 hours**. Core flows first (login, projects, tasks, role permissions), polish later.
   - **Local only:** no cloud database or backend-as-a-service (Firebase, Supabase, …). No deployment needed.
@@ -37,7 +37,7 @@ Package manager: **npm**. Each app has its own `package.json` and `package-lock.
 | | nodemon (dev) | 3.1.14 |
 | Database | PostgreSQL 16, local, **port 5433** | 16 |
 | ORM | Prisma CLI + @prisma/client (6.x line; npm `latest` tag is an 8.0 RC, so always pin) | 6.19.3 |
-| Auth (prepared, unused) | jsonwebtoken / bcryptjs | 9.0.3 / 3.0.3 |
+| Auth (used since Phase 3) | jsonwebtoken / bcryptjs | 9.0.3 / 3.0.3 |
 | Validation (used since Phase 1) | zod | 4.6.7 |
 | Tests | Node built-in test runner (`node --test`) + supertest (server); `node --test` for pure client helpers | Node 22 / 7.3.1 |
 | Root | concurrently | 10.0.6 |
@@ -72,15 +72,15 @@ Hackathon-neostats/
 ├── client/                 React + Vite frontend
 │   ├── public/             Static files served as-is (favicon)
 │   ├── src/
-│   │   ├── components/     UI pieces: Button, Badges, Feedback (Spinner/Alert/EmptyState), ConfirmDialog,
-│   │   │                   FormField, PageHeader/Card, Icon, ProjectForm, ProjectList, TeamSection, DevUserSwitcher,
+│   │   ├── components/     UI pieces: Button, Badges, Feedback (Spinner/Alert/EmptyState/NotAllowed), ConfirmDialog,
+│   │   │                   FormField, PageHeader/Card, Icon, AccountPicker, RoleSelector, ProjectForm, ProjectList, TeamSection, RequireAuth (route guard),
 │   │   │                   ProjectTasksSection, TaskList, TaskForm, CommentsSection
-│   │   ├── layouts/        AppLayout.jsx (sidebar, header, dev banner, <Outlet/>)
-│   │   ├── pages/          Dashboard, Projects, ProjectCreate, ProjectEdit, ProjectDetails, TaskCreate, TaskDetails, Users, NotFound
-│   │   ├── services/       api.js (Axios instance, X-Dev-User-Id interceptor, error helpers, isVersionConflict), projects.js, tasks.js, users.js
+│   │   ├── layouts/        AppLayout.jsx (sidebar, header with Sign out, Viewer read-only banner, <Outlet/>)
+│   │   ├── pages/          Login, Dashboard, Projects, ProjectCreate, ProjectEdit, ProjectDetails, TaskCreate, TaskDetails, Users (Admin management), Profile, NotFound
+│   │   ├── services/       api.js (Axios instance withCredentials, 401 handler, error helpers, isVersionConflict), auth.js, projects.js, tasks.js, users.js
 │   │   ├── hooks/          useApi.js (fetch + loading/error/reload)
-│   │   ├── context/        DevUserContext.jsx (TEMPORARY dev user switcher state)
-│   │   ├── utils/          labels.js, permissions.js (UX-only role checks), projectForm.js, taskForm.js (+ *.test.js)
+│   │   ├── context/        AuthContext.jsx (signed-in user, login/logout, session restore via /auth/me)
+│   │   ├── utils/          labels.js, permissions.js (UX-only role checks), projectForm.js, taskForm.js, authForm.js (+ *.test.js)
 │   │   ├── App.jsx         Route table
 │   │   ├── main.jsx        Entry: BrowserRouter + App
 │   │   └── index.css       Tailwind import
@@ -92,21 +92,21 @@ Hackathon-neostats/
 ├── server/                 Express API
 │   ├── prisma/
 │   │   ├── schema.prisma   User, Project, ProjectMember, Task, Comment + enums
-│   │   ├── migrations/     20261023080509_init_users_projects_members, 20261023090030_add_tasks_comments
-│   │   └── seed.js         Idempotent dev seed (exports runSeed for tests)
+│   │   ├── migrations/     20261023080509_init_users_projects_members, 20261023090030_add_tasks_comments, 20261023101615_add_auth_fields
+│   │   └── seed.js         Idempotent dev seed incl. demo passwords (exports runSeed for tests; refuses in production)
 │   ├── scripts/            testDatabase.js (derives *_test DB URL), setup-test-db.js (npm pretest)
 │   ├── src/
 │   │   ├── config/         env.js (only reader of process.env), prisma.js (PrismaClient singleton)
-│   │   ├── controllers/    health, project (incl. members), task (incl. comments), user
-│   │   ├── middleware/     notFound, errorHandler (maps Prisma errors), validate (Zod), devActor (TEMPORARY)
-│   │   ├── policies/       project.policy.js, task.policy.js: every permission rule in one place
-│   │   ├── routes/         index.js mounts /health, /dev, /users, /projects (+ /:id/tasks), /tasks
-│   │   ├── services/       project, member, task, comment, user (business rules + Prisma)
-│   │   ├── validators/     common, project, task, user (Zod schemas)
-│   │   ├── utils/          ApiError.js, pagination.js
+│   │   ├── controllers/    health, auth, project (incl. members), task (incl. comments), user
+│   │   ├── middleware/     auth (requireAuth, checkOrigin), notFound, errorHandler (maps Prisma errors), validate (Zod)
+│   │   ├── policies/       project.policy.js, task.policy.js, user.policy.js: every permission rule in one place
+│   │   ├── routes/         index.js mounts /health, /auth, /users, /projects (+ /:id/tasks), /tasks
+│   │   ├── services/       auth, project, member, task, comment, user (business rules + Prisma)
+│   │   ├── validators/     common, auth, project, task, user (Zod schemas)
+│   │   ├── utils/          ApiError.js, pagination.js, password.js (bcrypt), authToken.js (JWT + cookie)
 │   │   ├── app.js          Builds the Express app (no listen; imported by tests)
 │   │   └── server.js       Starts the HTTP server
-│   ├── tests/              health, projects, members, tasks, comments, users, database (+ helpers/)
+│   ├── tests/              health, auth, authorization, projects, members, tasks, comments, users, database (+ helpers/)
 │   ├── .env.example
 │   ├── nodemon.json        Watches src/ and .env
 │   └── package.json        "type": "module"
@@ -163,8 +163,10 @@ Migrations never run automatically on startup.
 | `CLIENT_ORIGIN` | `server/.env` | server (CORS) | No | `http://localhost:5173` |
 | `DATABASE_URL` | `server/.env` | Prisma | **Yes** | `postgresql://USER:PASSWORD@localhost:5433/neostats_project_manager?schema=public` |
 | `TEST_DATABASE_URL` | `server/.env` (optional) | tests | **Yes** | Defaults to `DATABASE_URL` with the DB name + `_test`. Name must end in `_test`. |
-| `JWT_SECRET` | `server/.env` | server (future auth) | **Yes** | Long random string; not used yet |
-| `JWT_EXPIRES_IN` | `server/.env` | server (future auth) | No | e.g. `1d`; not used yet |
+| `JWT_SECRET` | `server/.env` | server (auth) | **Yes** | Required, ≥ 32 chars, not the placeholder; the server exits at start-up otherwise (no fallback). Tests use a random one per run. |
+| `JWT_EXPIRES_IN` | `server/.env` | server (auth) | No | Token + cookie lifetime, default `8h` |
+| `BCRYPT_ROUNDS` | `server/.env` | server (passwords) | No | Default 12, clamped to 10–15 (tests use 10) |
+| `SEED_DEMO_PASSWORD` | `server/.env` | seed (dev only) | Dev only | Optional; default demo password is `Neostats@123` (documented in README) |
 
 Templates: `client/.env.example`, `server/.env.example`. Real `.env` files are git-ignored. **Never ask the user to paste passwords or secrets into chat.** They edit `server/.env` locally.
 
@@ -176,7 +178,7 @@ Templates: `client/.env.example`, `server/.env.example`. Real `.env` files are g
 - **File naming:** React components and pages `PascalCase.jsx`; hooks `useThing.js`; server files `feature.layer.js` (e.g. `task.routes.js`, `task.controller.js`, `task.service.js`, `task.validator.js`); classes `PascalCase.js`.
 - **Layering (server):** route (path + middleware) → controller (read `req`, call service, send response) → service (business rules + Prisma). Controllers must not contain Prisma queries; services must not touch `req`/`res`.
 - **Validation:** Zod schemas in `src/validators/`, applied by `validate({ params, query, body })` (`src/middleware/validate.js`) before the controller. Parsed values are on `req.valid.params|query|body`; controllers read those, never raw `req.body`. Failures → 400 `VALIDATION_ERROR` with `details: [{ location, path, message }]`. Body schemas use `z.strictObject` (unknown fields → 400).
-- **Permissions:** rules live in `src/policies/*.policy.js` as pure functions of `(actor, resource)`. Services call them and throw `ApiError(403, …, 'FORBIDDEN')`. `req.actor` is set by middleware (currently `requireDevActor`, later JWT `requireAuth`).
+- **Permissions:** rules live in `src/policies/*.policy.js` as pure functions of `(actor, resource)`. Services call them and throw `ApiError(403, …, 'FORBIDDEN')`. `req.actor` is set by `requireAuth` (`src/middleware/auth.js`) from the database; never trust ids/roles from the client.
 - **Error handling:** throw `ApiError(status, message, code)` for expected errors. Express 5 forwards rejected promises, so no try/catch boilerplate is needed just to call `next(err)`. The central `errorHandler` formats every error.
 - **Async:** use `async/await`, not `.then` chains.
 - **Environment:** read config only through `import { env } from './config/env.js'`. Never use `process.env` elsewhere.
@@ -232,12 +234,12 @@ Source: *NeoStats Full Stack Engineering Hackathon* brief (Part 1 Challenge Brie
 
 ### J2. CRUD scope
 
-- [ ] **Users:** create, read, update, **deactivate** (soft; no hard delete). Deactivated users cannot log in. *(Phase 1: read only, `GET /api/users`; `isActive` column exists. Create/update/deactivate come with Phase 3.)*
+- [x] **Users:** create, read, update, **deactivate** (soft; no hard delete). Deactivated users cannot log in and their sessions end immediately.
 - [x] **Projects:** create, read, update, **archive** (status `ARCHIVED` sets `archivedAt`), Admin delete.
 - [x] **Team members:** add, remove, **change project-level role** (`MEMBER` / `VIEWER`).
 - [x] **Tasks:** create, read, update, delete, assign, change status.
 - [x] **Comments:** create, read, delete.
-- [ ] **Authentication:** login (JWT) + auth middleware.
+- [x] **Authentication:** login (JWT in HttpOnly cookie) + `requireAuth` middleware + logout + `/auth/me`.
 
 ### J3. Concurrent updates (required)
 
@@ -261,13 +263,13 @@ Graded on: resource naming, correct HTTP verbs and status codes, input validatio
 
 ### J7. Deliverables
 
-- [ ] Seed script: one sample user per role (Admin, PM, Team Member, Viewer) + a few projects and tasks. *(Users, projects, memberships, tasks, comments done; login credentials in Phase 3.)*
+- [x] Seed script: one sample user per role (Admin, PM, Team Member, Viewer) + a deactivated user + projects, tasks, comments; demo password `Neostats@123` (dev only).
 - [x] Prisma migrations: schema reproducible from scratch with documented commands (`npm run prisma:migrate:deploy`).
-- [ ] README: setup steps, env vars, migrate + seed commands, starting both apps, sample login credentials.
-- [ ] Short architecture note (`docs/ARCHITECTURE.md`): data model, how authorization works, how concurrent updates are handled.
+- [x] README: setup steps, env vars, migrate + seed commands, starting both apps, sample login credentials.
+- [x] Short architecture note (`docs/ARCHITECTURE.md`): data model, how authorization works, how concurrent updates are handled.
 - [x] Tests for critical logic (permissions, 409 conflict detection).
 - [ ] Graceful errors: meaningful status codes on the server, clear messages in the UI.
-- [ ] `.env` never committed; `.env.example` kept up to date.
+- [x] `.env` never committed; `.env.example` kept up to date.
 
 ---
 
@@ -311,7 +313,15 @@ Phase 2: tasks, comments & concurrent-edit detection (verified 2026-10-23):
 - [x] Frontend unit tests 19/19, `npm run lint:client` clean, `npm run build:client` succeeds
 - [x] Manual API checks against the dev DB: visibility, 403s, 401, 409 `VERSION_CONFLICT` with a stale version (non-mutating)
 - [ ] Task UI clicked through in a real browser: not verified by Claude
-- [ ] Phase 3 features (auth, user admin)
+
+Phase 3: authentication, authorization & user management (verified 2026-10-23):
+
+- [x] Migration `20261023101615_add_auth_fields` (nullable `passwordHash`, `tokenVersion` default 0) created with `--create-only`, reviewed (purely additive), applied with `migrate deploy`; `migrate status` up to date; no reset
+- [x] Seed: filled missing password hashes for the 8 existing demo users and added the deactivated `inactive@neostats.local`; second run changes nothing; existing projects/tasks/comments untouched
+- [x] Backend tests 147/147 (incl. 3 for the dev-only login account picker; Phase 1–2 tests still green, now authenticated through the real cookie middleware; + `auth.test.js`, `authorization.test.js`, Admin user tests). Mutation check: disabling the token-version check makes 4 auth tests fail
+- [x] Frontend unit tests 30/30 (incl. role-filtered login picker helpers), `npm run build:client` succeeds, lint shows only 2 pre-existing warnings (`ProjectDetailsPage` unused `counter`); demo credentials absent from the production bundle
+- [x] Manual curl against the dev API: 401 without cookie / with `X-Dev-User-Id`, generic invalid-credentials message, deactivated login refused, login sets HttpOnly cookie, Viewer 403 on write, replaying a logged-out cookie → 401, CORS credentials only for `CLIENT_ORIGIN`; server exits with a weak `JWT_SECRET`
+- [ ] Login/users/profile UI clicked through in a real browser: not verified by Claude
 
 ---
 
@@ -338,7 +348,7 @@ Work moves phase by phase. Start a phase **only when the user asks for it**; do 
 0. [x] Setup and scaffolding
 1. [x] **Phase 1:** users/projects/memberships schema, projects + members API, policy layer, seed, role-aware UI, tests (section N)
 2. [x] **Phase 2:** Task + Comment models, tasks API with `version` → 409, comments API, task UI with conflict handling (section O)
-3. [ ] **Phase 3:** authentication (`passwordHash`, bcrypt, login, JWT `requireAuth` replacing `requireDevActor`), user admin (create/update/deactivate), login page, remove dev switcher
+3. [x] **Phase 3:** authentication (`passwordHash`, bcrypt, login, cookie JWT `requireAuth`, `tokenVersion` logout), user admin (create/update/deactivate), login page, dev switcher removed (section P)
 4. [ ] Final: dashboard polish, README credentials, architecture note, final push
 
 ---
@@ -384,16 +394,12 @@ A project the actor cannot see → 403. Team changes on an `ARCHIVED` project �
 | PATCH | `/projects/:id/members/:userId` `{ role }` | 200 | 404 `MEMBER_NOT_FOUND` |
 | DELETE | `/projects/:id/members/:userId` | 200 `{ projectId, userId }` | 404 `MEMBER_NOT_FOUND` |
 | GET | `/users?role&isActive&search&page&limit` | 200 + `meta` | 403 |
-| GET | `/dev/users` (TEMPORARY, no header needed; 404 in production) | 200 | |
 
-Every `/projects` and `/users` request needs `X-Dev-User-Id` (401 `UNAUTHENTICATED` without it, 403 `USER_INACTIVE` for deactivated users). Prisma errors are mapped centrally: P2002 → 409, P2025 → 404, P2003 → 400.
+Every `/projects`, `/tasks` and `/users` request needs a valid session cookie (401 `UNAUTHENTICATED` otherwise, including deactivated users; see section P). Prisma errors are mapped centrally: P2002 → 409, P2025 → 404, P2003 → 400.
 
-### N4. TEMPORARY development user switcher (NOT authentication)
+### N4. Development user switcher: REMOVED in Phase 3
 
-- The header dropdown ("Viewing as") lists active users from `GET /api/dev/users`. The chosen id is kept in `localStorage` (`neostats.devUserId`) and sent as `X-Dev-User-Id` by the Axios interceptor in `client/src/services/api.js`.
-- `server/src/middleware/devActor.js` (`requireDevActor`) loads that user **from the database** into `req.actor`. The role used for permission checks always comes from the DB row; the client never sends a role.
-- It is **not a security boundary** (anyone can choose any id). It is disabled when `NODE_ENV=production` (401 / `/dev` 404). A yellow banner in the UI says so.
-- **Phase 3 replacement plan:** add `requireAuth` (JWT) that sets the same `req.actor = { id, name, email, role, isActive }`; swap it into `routes/index.js`; delete `devActor.js`, `dev.routes.js`, `DevUserContext.jsx`, `DevUserSwitcher.jsx`, and the interceptor. Policies and services stay unchanged.
+Phases 1–2 used a temporary `X-Dev-User-Id` header + "Viewing as" dropdown. It was deleted in Phase 3 (`devActor.js`, `dev.routes.js`, `DevUserContext.jsx`, `DevUserSwitcher.jsx`, the Axios interceptor). The header is ignored and `/api/dev/users` returns 404. Do not reintroduce it.
 
 ### N5. Workflows
 
@@ -404,7 +410,7 @@ Every `/projects` and `/users` request needs `X-Dev-User-Id` (401 `UNAUTHENTICAT
 
 ### N6. Seed (`server/prisma/seed.js`, `npm run db:seed`)
 
-Idempotent: users matched by email, projects by name, memberships by `(projectId, userId)`. Existing rows are never updated. No passwords.
+Idempotent: users matched by email, projects by name, memberships by `(projectId, userId)`. Existing rows are never updated, except that a **missing** `passwordHash` is filled with the demo password hash (Phase 3). Demo password: `Neostats@123` (or `SEED_DEMO_PASSWORD`). Refuses to run with `NODE_ENV=production`.
 
 | Role | Name | Email |
 |---|---|---|
@@ -413,6 +419,7 @@ Idempotent: users matched by email, projects by name, memberships by `(projectId
 | PROJECT_MANAGER | Marcus Lee | marcus.pm@neostats.local |
 | TEAM_MEMBER | Aisha Khan / Ben Carter / Chloe Martin / Diego Ramos | aisha@ / ben@ / chloe@ / diego@neostats.local |
 | VIEWER | Vera Viewer | viewer@neostats.local |
+| TEAM_MEMBER (deactivated) | Ivan Inactive | inactive@neostats.local |
 
 Projects: Website Redesign (Priya; Aisha, Ben), Mobile App Launch (Priya, on hold; Ben, Chloe), Data Warehouse Migration (Marcus; Chloe, Diego as read-only), Customer Portal (no manager, for the assignment demo), Legacy CRM Sunset (Marcus, archived; Aisha).
 
@@ -423,7 +430,7 @@ Projects: Website Redesign (Priya; Aisha, Ben), Mobile App Launch (Priya, on hol
 
 ### N8. Explicitly deferred
 
-Login/signup, passwords, JWT, sessions/logout, real protected routes (Phase 3); user create/update/deactivate (Phase 3); analytics dashboard, notifications (later).
+(Done in Phase 3: login, passwords, sessions/logout, protected routes, user management.) Still deferred: signup, self-service password change/reset, analytics dashboard, notifications.
 
 ---
 
@@ -485,7 +492,64 @@ Decision: the brief gives Admins project/user management, not task management, s
 
 ### O7. Remaining limitations
 
-- No authentication yet (Phase 3); the dev user switcher is not a security boundary.
 - Task deletion is not version-checked (only updates are).
 - Comments cannot be edited; no notifications, no task activity history.
 - UI not clicked through in a real browser by Claude (no browser in the session).
+
+---
+
+## P. Phase 3 Reference: Authentication, Authorization & User Management
+
+### P1. Strategy (one mechanism only)
+
+JWT (HS256, `{ sub: userId, ver: tokenVersion }`, lifetime `JWT_EXPIRES_IN` default 8h) in the cookie **`neostats_session`**: `HttpOnly`, `SameSite=Strict`, `Path=/`, `Secure` when `NODE_ENV=production`. Never in a response body, never in `localStorage`. `Authorization: Bearer` is **not** accepted. Client: Axios `withCredentials: true`; server: `cors({ origin: CLIENT_ORIGIN, credentials: true })`. Frontend and API must be on the same site (`localhost`, not `127.0.0.1`).
+
+### P2. Files
+
+| File | Purpose |
+|---|---|
+| `server/src/utils/password.js` | `hashPassword` (bcrypt, `BCRYPT_ROUNDS`), `verifyPassword` (dummy-hash compare for unknown users / no password / > 72 bytes) |
+| `server/src/utils/authToken.js` | `signAuthToken`, `verifyAuthToken` (algorithm pinned), `setAuthCookie`/`clearAuthCookie` (same options), `readAuthCookie` |
+| `server/src/middleware/auth.js` | `requireAuth` (cookie → verify → user from DB → active + version match → `req.actor`), `checkOrigin` (403 `FORBIDDEN_ORIGIN` for non-GET from a foreign Origin) |
+| `server/src/config/env.js` | `assertAuthConfig()` (secret ≥ 32 chars, not placeholder; called by `server.js` at start-up and before every sign/verify) |
+| `server/src/services/auth.service.js` | `login` (generic 401 `INVALID_CREDENTIALS`; 403 `ACCOUNT_DEACTIVATED` only after a correct password), `logout(token)` (`updateMany where { id, tokenVersion }` → increment) |
+| `server/src/services/user.service.js` | directory + Admin `getUser`/`createUser`/`updateUser`; `authUserSelect` = safe fields |
+| `server/src/policies/user.policy.js` | `canManageUsers` (Admin), `selfChangeViolation` (no own role change / self-deactivation) |
+| `client/src/context/AuthContext.jsx` | `useAuth()` → `{ currentUser, status, error, notice, login, logout, retry }` |
+| `client/src/components/RequireAuth.jsx` | Route guard → `/login` with `state.from` |
+| `client/src/pages/LoginPage.jsx` | Order: role cards (`RoleSelector`) → role-filtered searchable `AccountPicker` → password → Sign in. Accounts come from `GET /auth/demo-accounts` (dev only); changing the role clears the chosen account; the picker is disabled until a role is chosen and opens only on click/typing/Arrow Down (never on page load). The role is UI filtering only and is **never sent**: login posts email + password and the server reads the real role from the DB. Falls back to a plain email input (no role cards) when the list returns 404 (production) or fails. Yellow demo panel (password + quick picks: every account of the selected role, or one per role; clicking also selects the role) only when `import.meta.env.DEV` (stripped from production builds) |
+| `client/src/components/AccountPicker.jsx`, `client/src/components/RoleSelector.jsx`, `client/src/utils/accountSearch.js` | ARIA combobox (search name/email, keyboard + mouse, custom empty message), four role toggle cards (`aria-pressed`), pure helpers `filterAccounts` / `accountsForRole` / `firstAccountPerRole` (+ tests) |
+
+### P3. Invalidation
+
+`users.tokenVersion` increments on **logout (all sessions of that user)**, **deactivation**, and **Admin password reset**. Every request compares it, so old tokens die immediately, even after reactivation. Role changes need no bump because roles are re-read from the DB on every request.
+
+### P4. API (details in `docs/API.md`)
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| POST | `/auth/login` | public | 200 + cookie; 400; 401 `INVALID_CREDENTIALS`; 403 `ACCOUNT_DEACTIVATED` |
+| GET | `/auth/me` | signed in | safe fields `{ id, name, email, role, isActive, createdAt }` |
+| POST | `/auth/logout` | public (acts only on a valid cookie) | always 200 + cookie cleared |
+| GET | `/auth/demo-accounts` | public, **development only** (`devOnly(demoAccountsEnabled)` → 404 when `NODE_ENV=production`) | `{ id, name, email, role }` of active users that have a password, for the login picker. Picking an account only fills the email; the password is still verified and the role comes from the DB. Lists accounts to anonymous visitors (enumeration), which is why it is dev-only |
+| GET | `/users` | Admin, PM | unchanged directory (public fields only) |
+| GET | `/users/:id` | Admin | 404 `USER_NOT_FOUND` |
+| POST | `/users` | Admin | `{ name, email, password, role }`; 409 `EMAIL_TAKEN` |
+| PATCH | `/users/:id` | Admin | `{ name?, email?, role?, isActive?, password? }`; 403 self role/deactivate; 409 `USER_HAS_ASSIGNMENTS` when a PM still manages projects or a Team Member still has memberships |
+
+No DELETE for users (deactivation only). Password policy: 8+ chars, a letter and a digit, ≤ 72 bytes (server Zod + `client/src/utils/authForm.js`).
+
+### P5. Tests
+
+- `tests/helpers/useTestDatabase.js` sets a random `JWT_SECRET` and `BCRYPT_ROUNDS=10` per run. `tests/helpers/db.js#as(user)` returns a `Cookie` header with a real signed token, so **all** tests pass through `requireAuth`. `createUserWithPassword(role, password)` creates a user who can log in.
+- `auth.test.js`: login success/cookie flags, email normalization, generic 401s, no-password account, deactivated account, malformed input, > 72-byte guard, `/me` safe fields + live role, tampered / wrong-secret / `none` / expired / stripped-signature tokens, deleted user, Bearer header rejected, logout invalidation + replay, all-sessions logout, old token cannot log out the new session, deactivation/reactivation/password reset invalidation, CSRF origin check, CORS credentials, demo-accounts list (active + has password only, public fields, no hash, 404 when disabled, client role rejected).
+- `authorization.test.js`: PM own vs unrelated projects and Admin-only operations; Team Member visibility, own-task fields only, no PM operations, spoofed `authorId`; Viewer reads all and every write is 403 with no change; ids in query/headers ignored; 401 without session.
+- `users.test.js`: Admin create (hash format, login works), duplicate email, validation, non-admin 403 for all user management, no self-promotion, Admin self-protection, deactivate (row kept, no DELETE route), role change 409, 404/400.
+
+### P6. Remaining limitations
+
+- No login rate limiting or lockout (would need extra infrastructure; acceptable for a local hackathon app).
+- Logout signs the user out of all sessions (design of the token-version approach).
+- No self-service password change / forgot-password flow; an Admin resets passwords.
+- Deactivating a user does not unassign their tasks or managed projects; Admin/PM reassign manually (new assignments already reject inactive users).
+- Login/Users/Profile UI not clicked through in a real browser by Claude.

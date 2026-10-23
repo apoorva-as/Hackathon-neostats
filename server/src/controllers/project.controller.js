@@ -2,7 +2,7 @@ import * as memberService from '../services/member.service.js'
 import * as projectService from '../services/project.service.js'
 
 // Controllers only read the validated request (req.valid), call a service and
-// send the response. req.actor is set by the requireDevActor middleware.
+// send the response. req.actor is set by the requireAuth middleware.
 
 export async function listProjects(req, res) {
   const { projects, meta } = await projectService.listProjects(req.actor, req.valid.query)

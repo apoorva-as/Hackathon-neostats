@@ -2,7 +2,8 @@
 // Docs: https://www.prisma.io/docs/orm/prisma-schema
 //
 // Phase 1 models: User, Project, ProjectMember.
-// Phase 2 models: Task, Comment. Password/auth fields arrive in Phase 3.
+// Phase 2 models: Task, Comment.
+// Phase 3: User.passwordHash + User.tokenVersion (authentication).
 
 generator client {
   provider = "prisma-client-js"
@@ -52,17 +53,23 @@ enum TaskPriority {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(100)
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(100)
   // Always stored trimmed + lowercase (normalized in services and the seed).
-  email     String   @unique @db.VarChar(255)
-  role      UserRole @default(TEAM_MEMBER)
+  email        String   @unique @db.VarChar(255)
+  role         UserRole @default(TEAM_MEMBER)
   // Soft "deactivate" flag (brief: users are deactivated, not deleted).
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Phase 3 will add: passwordHash String
+  isActive     Boolean  @default(true)
+  // bcrypt hash (never the plaintext, never returned by the API).
+  // Nullable so users created before Phase 3 keep working; a user without a
+  // hash simply cannot log in until an Admin sets a password.
+  passwordHash String?  @db.VarChar(100)
+  // Session invalidation: every login token carries this number. Logout,
+  // deactivation and password resets increment it, which makes all tokens
+  // issued earlier for this user invalid immediately.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   managedProjects Project[]       @relation("ProjectManager")
   memberships     ProjectMember[]

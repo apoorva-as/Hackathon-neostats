@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { Avatar, RoleBadge } from '../components/Badges.jsx'
 import Button from '../components/Button.jsx'
-import DevUserSwitcher from '../components/DevUserSwitcher.jsx'
-import { Alert, EmptyState, Spinner } from '../components/Feedback.jsx'
 import Icon from '../components/Icon.jsx'
-import { useDevUser } from '../context/DevUserContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { navItemsFor } from '../utils/permissions.js'
 
 function Sidebar({ user, onNavigate }) {
@@ -31,38 +29,29 @@ function Sidebar({ user, onNavigate }) {
         ))}
       </nav>
       <div className="border-t border-slate-800 p-4">
-        <div className="flex items-center gap-3">
+        <Link to="/profile" onClick={onNavigate} className="flex items-center gap-3 rounded-lg hover:bg-slate-800/60">
           <Avatar name={user.name} id={user.id} />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-white">{user.name}</p>
             <p className="truncate text-xs text-slate-400">{user.email}</p>
           </div>
-        </div>
+        </Link>
       </div>
     </div>
   )
 }
 
+// Only rendered for a signed-in user (see RequireAuth in App.jsx).
 export default function AppLayout() {
-  const { currentUser, loading, error, retry } = useDevUser()
+  const { currentUser, logout } = useAuth()
+  const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
-  if (loading) return <Spinner label="Loading workspace…" />
-  if (error) {
-    return (
-      <div className="mx-auto max-w-lg p-6">
-        <Alert onRetry={retry}>{error}</Alert>
-      </div>
-    )
-  }
-  if (!currentUser) {
-    return (
-      <div className="mx-auto max-w-lg p-6">
-        <EmptyState icon="users" title="No users in the database">
-          Run <code className="rounded bg-slate-100 px-1">npm run db:seed</code> from the repository root, then reload.
-        </EmptyState>
-      </div>
-    )
+  async function handleLogout() {
+    setSigningOut(true)
+    await logout()
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -88,16 +77,21 @@ export default function AppLayout() {
       )}
 
       <div className="lg:pl-60">
-        <div className="bg-amber-100 px-4 py-1.5 text-center text-xs text-amber-900">
-          <strong>Development mode:</strong> the user switcher is a temporary demo tool, not authentication. Login arrives in Phase 3.
-        </div>
+        {currentUser.role === 'VIEWER' && (
+          <div className="bg-sky-50 px-4 py-1.5 text-center text-xs text-sky-900">
+            <strong>Read-only access:</strong> you can view projects, teams, tasks and comments, but not change them.
+          </div>
+        )}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           <Button variant="ghost" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu" icon="menu" />
           <div className="flex-1" />
+          <span className="hidden text-sm font-medium text-slate-700 md:inline">{currentUser.name}</span>
           <span className="hidden sm:inline-flex">
             <RoleBadge role={currentUser.role} />
           </span>
-          <DevUserSwitcher />
+          <Button variant="secondary" size="sm" icon="logout" loading={signingOut} onClick={handleLogout}>
+            Sign out
+          </Button>
         </header>
 
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">
