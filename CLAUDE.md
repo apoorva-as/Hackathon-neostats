@@ -8,8 +8,8 @@ Persistent guide for Claude Code sessions working in this repository. **Read thi
 
 - **Project:** NEOSTATS Project Management Platform (repo: `Hackathon-neostats`, remote `origin` = `https://github.com/apoorva-as/Hackathon-neostats.git`, branch `main`).
 - **Objective:** Build a Collaborative Project Management Platform for the NEOSTATS Full Stack Engineering Hackathon. It covers four roles (Admin, Project Manager, Team Member, Viewer), authentication, authorization, projects, membership, tasks, comments, and detection of concurrent task updates.
-- **Current phase: Phase 1 complete (Admin, projects & team management).** Users/projects/memberships are in PostgreSQL, the API and the React UI work for all four roles. See section N.
-- **Not implemented yet:** login/JWT/passwords (Phase 3), tasks and comments (Phase 2), concurrent-update detection (Phase 2), user create/edit/deactivate UI (Phase 3). Role switching uses a **temporary development user switcher** that is *not* authentication (section N4).
+- **Current phase: Phase 2 complete (tasks, comments, concurrent-edit detection)** on top of Phase 1 (projects & team management). See sections N and O.
+- **Not implemented yet:** login/JWT/passwords (Phase 3), user create/edit/deactivate UI (Phase 3). Role switching uses a **temporary development user switcher** that is *not* authentication (section N4).
 - **Hackathon constraints (from the NeoStats brief):**
   - Time limit: **3 hours**. Core flows first (login, projects, tasks, role permissions), polish later.
   - **Local only:** no cloud database or backend-as-a-service (Firebase, Supabase, …). No deployment needed.
@@ -73,13 +73,14 @@ Hackathon-neostats/
 │   ├── public/             Static files served as-is (favicon)
 │   ├── src/
 │   │   ├── components/     UI pieces: Button, Badges, Feedback (Spinner/Alert/EmptyState), ConfirmDialog,
-│   │   │                   FormField, PageHeader/Card, Icon, ProjectForm, ProjectList, TeamSection, DevUserSwitcher
+│   │   │                   FormField, PageHeader/Card, Icon, ProjectForm, ProjectList, TeamSection, DevUserSwitcher,
+│   │   │                   ProjectTasksSection, TaskList, TaskForm, CommentsSection
 │   │   ├── layouts/        AppLayout.jsx (sidebar, header, dev banner, <Outlet/>)
-│   │   ├── pages/          Dashboard, Projects, ProjectCreate, ProjectEdit, ProjectDetails, Users, NotFound
-│   │   ├── services/       api.js (Axios instance, X-Dev-User-Id interceptor, error helpers), projects.js, users.js
+│   │   ├── pages/          Dashboard, Projects, ProjectCreate, ProjectEdit, ProjectDetails, TaskCreate, TaskDetails, Users, NotFound
+│   │   ├── services/       api.js (Axios instance, X-Dev-User-Id interceptor, error helpers, isVersionConflict), projects.js, tasks.js, users.js
 │   │   ├── hooks/          useApi.js (fetch + loading/error/reload)
 │   │   ├── context/        DevUserContext.jsx (TEMPORARY dev user switcher state)
-│   │   ├── utils/          labels.js, permissions.js (UX-only role checks), projectForm.js (+ *.test.js)
+│   │   ├── utils/          labels.js, permissions.js (UX-only role checks), projectForm.js, taskForm.js (+ *.test.js)
 │   │   ├── App.jsx         Route table
 │   │   ├── main.jsx        Entry: BrowserRouter + App
 │   │   └── index.css       Tailwind import
@@ -90,22 +91,22 @@ Hackathon-neostats/
 │   └── vite.config.js      React + Tailwind plugins, port 5173 (strictPort)
 ├── server/                 Express API
 │   ├── prisma/
-│   │   ├── schema.prisma   User, Project, ProjectMember + enums
-│   │   ├── migrations/     20261023080509_init_users_projects_members
+│   │   ├── schema.prisma   User, Project, ProjectMember, Task, Comment + enums
+│   │   ├── migrations/     20261023080509_init_users_projects_members, 20261023090030_add_tasks_comments
 │   │   └── seed.js         Idempotent dev seed (exports runSeed for tests)
 │   ├── scripts/            testDatabase.js (derives *_test DB URL), setup-test-db.js (npm pretest)
 │   ├── src/
 │   │   ├── config/         env.js (only reader of process.env), prisma.js (PrismaClient singleton)
-│   │   ├── controllers/    health, project (incl. members), user
+│   │   ├── controllers/    health, project (incl. members), task (incl. comments), user
 │   │   ├── middleware/     notFound, errorHandler (maps Prisma errors), validate (Zod), devActor (TEMPORARY)
-│   │   ├── policies/       project.policy.js: every permission rule in one place
-│   │   ├── routes/         index.js mounts /health, /dev, /users, /projects
-│   │   ├── services/       project, member, user (business rules + Prisma)
-│   │   ├── validators/     common, project, user (Zod schemas)
+│   │   ├── policies/       project.policy.js, task.policy.js: every permission rule in one place
+│   │   ├── routes/         index.js mounts /health, /dev, /users, /projects (+ /:id/tasks), /tasks
+│   │   ├── services/       project, member, task, comment, user (business rules + Prisma)
+│   │   ├── validators/     common, project, task, user (Zod schemas)
 │   │   ├── utils/          ApiError.js, pagination.js
 │   │   ├── app.js          Builds the Express app (no listen; imported by tests)
 │   │   └── server.js       Starts the HTTP server
-│   ├── tests/              health, projects, members, users, database (+ helpers/)
+│   ├── tests/              health, projects, members, tasks, comments, users, database (+ helpers/)
 │   ├── .env.example
 │   ├── nodemon.json        Watches src/ and .env
 │   └── package.json        "type": "module"
@@ -213,7 +214,7 @@ Templates: `client/.env.example`, `server/.env.example`. Real `.env` files are g
 
 ---
 
-## J. Hackathon Requirements (Phase 1 parts implemented; rest planned)
+## J. Hackathon Requirements (Phases 1–2 implemented; rest planned)
 
 Source: *NeoStats Full Stack Engineering Hackathon* brief (Part 1 Challenge Brief + Part 2 Guidelines). This section is the spec; designs below marked "suggested" are finalised in their own phase.
 
@@ -234,13 +235,13 @@ Source: *NeoStats Full Stack Engineering Hackathon* brief (Part 1 Challenge Brie
 - [ ] **Users:** create, read, update, **deactivate** (soft; no hard delete). Deactivated users cannot log in. *(Phase 1: read only, `GET /api/users`; `isActive` column exists. Create/update/deactivate come with Phase 3.)*
 - [x] **Projects:** create, read, update, **archive** (status `ARCHIVED` sets `archivedAt`), Admin delete.
 - [x] **Team members:** add, remove, **change project-level role** (`MEMBER` / `VIEWER`).
-- [ ] **Tasks:** create, read, update, delete, assign, change status.
-- [ ] **Comments:** create, read, delete.
+- [x] **Tasks:** create, read, update, delete, assign, change status.
+- [x] **Comments:** create, read, delete.
 - [ ] **Authentication:** login (JWT) + auth middleware.
 
 ### J3. Concurrent updates (required)
 
-- [ ] Tasks have an integer `version` column.
+- [x] Tasks have an integer `version` column. *(Implemented: error code is `VERSION_CONFLICT`, body includes `currentVersion` + `currentTask`; see O4.)*
 - Client sends the `version` it last read with every update.
 - Server updates only `WHERE id = :id AND version = :version` and increments `version` in the same statement. If no row matched → **HTTP 409** `{ code: "CONFLICT" }`, including the latest task state.
 - UI shows a clear conflict message and lets the user review/reload the latest version instead of silently overwriting.
@@ -260,11 +261,11 @@ Graded on: resource naming, correct HTTP verbs and status codes, input validatio
 
 ### J7. Deliverables
 
-- [ ] Seed script: one sample user per role (Admin, PM, Team Member, Viewer) + a few projects and tasks. *(Phase 1: users, projects, memberships done; tasks in Phase 2; login credentials in Phase 3.)*
+- [ ] Seed script: one sample user per role (Admin, PM, Team Member, Viewer) + a few projects and tasks. *(Users, projects, memberships, tasks, comments done; login credentials in Phase 3.)*
 - [x] Prisma migrations: schema reproducible from scratch with documented commands (`npm run prisma:migrate:deploy`).
 - [ ] README: setup steps, env vars, migrate + seed commands, starting both apps, sample login credentials.
 - [ ] Short architecture note (`docs/ARCHITECTURE.md`): data model, how authorization works, how concurrent updates are handled.
-- [ ] Tests for critical logic (permissions, 409 conflict detection) if time allows.
+- [x] Tests for critical logic (permissions, 409 conflict detection).
 - [ ] Graceful errors: meaningful status codes on the server, clear messages in the UI.
 - [ ] `.env` never committed; `.env.example` kept up to date.
 
@@ -301,7 +302,16 @@ Phase 1: Admin, projects & team management (verified 2026-10-23):
 - [x] Frontend unit tests 11/11 (`npm run test:client`), `npm run lint:client` clean, `npm run build:client` succeeds
 - [x] Manual API checks with curl against the dev DB (role visibility, 403s, 409 duplicate, CORS preflight with `X-Dev-User-Id`)
 - [ ] UI clicked through in a real browser: not verified by Claude (no browser available in the session); only the Vite server response (200) was checked
-- [ ] All other features in section J (Phases 2–3)
+
+Phase 2: tasks, comments & concurrent-edit detection (verified 2026-10-23):
+
+- [x] Task + Comment models; migration `20261023090030_add_tasks_comments` created with `--create-only`, reviewed (purely additive), applied with `migrate deploy`; `migrate status` up to date; no reset
+- [x] Seed: 5 tasks + 3 comments added to the dev DB; second run creates 0
+- [x] Backend tests 101/101 (Phase 1 tests still green; one expectation updated for the new `canManageTasks` permission)
+- [x] Frontend unit tests 19/19, `npm run lint:client` clean, `npm run build:client` succeeds
+- [x] Manual API checks against the dev DB: visibility, 403s, 401, 409 `VERSION_CONFLICT` with a stale version (non-mutating)
+- [ ] Task UI clicked through in a real browser: not verified by Claude
+- [ ] Phase 3 features (auth, user admin)
 
 ---
 
@@ -327,7 +337,7 @@ Work moves phase by phase. Start a phase **only when the user asks for it**; do 
 
 0. [x] Setup and scaffolding
 1. [x] **Phase 1:** users/projects/memberships schema, projects + members API, policy layer, seed, role-aware UI, tests (section N)
-2. [ ] **Phase 2:** Task + Comment models, tasks API with `version` → 409, comments API, task UI with conflict handling
+2. [x] **Phase 2:** Task + Comment models, tasks API with `version` → 409, comments API, task UI with conflict handling (section O)
 3. [ ] **Phase 3:** authentication (`passwordHash`, bcrypt, login, JWT `requireAuth` replacing `requireDevActor`), user admin (create/update/deactivate), login page, remove dev switcher
 4. [ ] Final: dashboard polish, README credentials, architecture note, final push
 
@@ -389,7 +399,7 @@ Every `/projects` and `/users` request needs `X-Dev-User-Id` (401 `UNAUTHENTICAT
 
 - **Admin:** Dashboard → Projects → *New project* (name, description, status, manager picked from active PMs) → details page. On the details page: *Edit*, *Delete* (confirm dialog; memberships cascade), inline *Assign* of the manager in the Details card, team management. Users page = read-only directory with role filter.
 - **Project Manager:** sees only projects they manage. Details page → Team card: pick an active Team Member who is not on the team yet, choose project role, *Add*; change role inline; trash icon → confirm → membership removed (user kept). Can edit name/description/status, cannot delete or reassign the manager.
-- **Team Member:** "My projects" = projects they belong to; details and teammates are read-only. Tasks show a Phase 2 placeholder.
+- **Team Member:** "My projects" = projects they belong to; details and teammates are read-only. Tasks: see section O.
 - **Viewer:** all projects, details and teams read-only ("Read-only" badge, no action buttons).
 
 ### N6. Seed (`server/prisma/seed.js`, `npm run db:seed`)
@@ -413,4 +423,69 @@ Projects: Website Redesign (Priya; Aisha, Ben), Mobile App Launch (Priya, on hol
 
 ### N8. Explicitly deferred
 
-Login/signup, passwords, JWT, sessions/logout, real protected routes (Phase 3); user create/update/deactivate (Phase 3); tasks, task assignment/status, comments, `version`-based 409 conflicts (Phase 2); analytics dashboard, notifications (later).
+Login/signup, passwords, JWT, sessions/logout, real protected routes (Phase 3); user create/update/deactivate (Phase 3); analytics dashboard, notifications (later).
+
+---
+
+## O. Phase 2 Reference: Tasks, Comments & Concurrent-Edit Detection
+
+### O1. Data model (migration `20261023090030_add_tasks_comments`, additive)
+
+| Model (table) | Key fields | Notes |
+|---|---|---|
+| `Task` (`tasks`) | `id`, `projectId` → Project (`CASCADE`), `title` (≤200), `description` (default "", ≤5000), `status TaskStatus` (default `TODO`), `priority TaskPriority` (default `MEDIUM`), `dueDate` (`DATE`, nullable), `assigneeId` → User (nullable, `SET NULL`), `version` Int default 1, timestamps | Indexes `(projectId, status)`, `assigneeId`. API returns `dueDate` as `"YYYY-MM-DD"`. |
+| `Comment` (`comments`) | `id`, `taskId` → Task (`CASCADE`), `authorId` → User (`CASCADE`), `body` (≤2000), `createdAt` | No editing (no `updatedAt`). Indexes `(taskId, createdAt)`, `authorId`. |
+
+Enums: `TaskStatus { TODO, IN_PROGRESS, DONE }`, `TaskPriority { LOW, MEDIUM, HIGH }`. Project delete → tasks → comments cascade.
+
+**Assignment rule (server-side, `task.service.js#assertValidAssignee`):** assignee must exist, be active, have global role `TEAM_MEMBER`, and be a member of the task's project with project role `MEMBER`. Otherwise 400 `INVALID_ASSIGNEE`. Removing a member, or changing them to project role `VIEWER`, unassigns their tasks in that project in the same transaction and bumps those tasks' `version` (`member.service.js`).
+
+### O2. Permission rules (`server/src/policies/task.policy.js`)
+
+| Action | Admin | Project Manager | Team Member | Viewer |
+|---|---|---|---|---|
+| Read tasks / comments | all | projects they manage | projects they belong to (MEMBER or VIEWER role) | all |
+| Create / delete / assign tasks | ❌ | ✅ own projects | ❌ | ❌ |
+| Edit task | ❌ | ✅ all fields | ✅ `status`, `description` of tasks assigned to them, only with project role `MEMBER` | ❌ |
+| Add comment | ❌ | ✅ own projects | ✅ project role `MEMBER` (any task in the project) | ❌ |
+| Delete comment | ✅ (moderation) | ✅ own projects | ✅ own comments | ❌ |
+
+Decision: the brief gives Admins project/user management, not task management, so Admin is read-only for tasks (plus comment moderation). Archived project → all task/comment writes 409 `PROJECT_ARCHIVED`. A PATCH containing any field the actor may not edit → 403 and nothing changes. `GET /api/tasks/:id` returns `permissions { editableFields, canEdit, canAssign, canDelete, canComment }`; comments carry `canDelete`; project `permissions` gained `canManageTasks`.
+
+### O3. API (details in `docs/API.md`)
+
+| Method | Path | Success | Notable errors |
+|---|---|---|---|
+| GET | `/projects/:id/tasks?page&limit&status&priority&assigneeId&search` | 200 + `meta` | 403, 404 |
+| POST | `/projects/:id/tasks` `{ title, description?, status?, priority?, dueDate?, assigneeId? }` | 201 | 400 `INVALID_ASSIGNEE`, 403, 409 `PROJECT_ARCHIVED` |
+| GET | `/tasks?…&projectId` (all visible projects; `assigneeId` = "my tasks") | 200 + `meta` | 400 |
+| GET | `/tasks/:taskId` | 200 (+ `permissions`) | 403, 404 `TASK_NOT_FOUND` |
+| PATCH | `/tasks/:taskId` `{ version, …fields }` | 200 (version + 1) | 400, 403, 404, **409 `VERSION_CONFLICT`** |
+| DELETE | `/tasks/:taskId` | 200 `{ id }` | 403, 404 |
+| GET | `/tasks/:taskId/comments?page&limit` | 200 + `meta` | 403, 404 |
+| POST | `/tasks/:taskId/comments` `{ body }` | 201 | 400, 403 |
+| DELETE | `/tasks/:taskId/comments/:commentId` | 200 `{ id, taskId }` | 403, 404 `COMMENT_NOT_FOUND` |
+
+### O4. Optimistic concurrency (HTTP 409)
+
+`updateTask` checks permissions, then runs `prisma.task.updateMany({ where: { id, version }, data: { ...changes, version: { increment: 1 } } })`: one atomic `UPDATE … WHERE id AND version`. `count === 0` → re-read: missing → 404, else 409 `VERSION_CONFLICT` with `error.currentVersion` and `error.currentTask` (added via the new optional 5th `extra` argument of `ApiError`, merged into the error body by `errorHandler`). Two simultaneous PATCHes with the same version: exactly one succeeds (tested with three parallel requests). UI: `TaskForm` and the quick status select show "This task changed since you opened it. Your changes were not saved." + **Reload the latest version**; never auto-retries.
+
+### O5. Frontend
+
+- Routes: `/projects/:id/tasks/new` (`TaskCreatePage`, PM only), `/tasks/:id` (`TaskDetailsPage`: details, quick status select, edit/update form, delete, comments).
+- Components: `ProjectTasksSection` (on project details: status filters, "Assigned to me" for Team Members, pagination, New task), `TaskList`, `TaskForm` (disables fields not in `editableFields`), `CommentsSection`; badges `TaskStatusBadge`, `PriorityBadge`.
+- Dashboard: "My open tasks" (Team Member, `assigneeId` = self) or "Open tasks" (others).
+- Helpers: `services/tasks.js`, `utils/taskForm.js` (validation, create/update payloads that send only changed editable fields + `version`, `eligibleAssignees`), `isVersionConflict` in `services/api.js`, `formatDueDate`/`isOverdue` in `utils/labels.js` (UTC so dates don't shift).
+
+### O6. Seed & tests
+
+- Seed adds 5 tasks (Website Redesign ×3, Mobile App Launch, Data Warehouse Migration) and 3 comments; tasks matched by (project, title), comments by (task, author, body). `runSeed` now also returns `tasksCreated`, `commentsCreated`.
+- `npm test`: 101 tests (Phase 1's 63, still green, + `tasks.test.js`, `comments.test.js`): CRUD, filters/pagination, assignment validation (outsider, read-only member, Viewer, PM, Admin, inactive, missing), role restrictions, project boundaries, archived 409, stale version 409 with no overwrite, simultaneous updates (one 200, rest 409), member removal unassigns, cascades, comment permissions/validation/cross-task 404.
+- `npm run test:client`: 19 tests (adds `utils/taskForm.test.js`).
+
+### O7. Remaining limitations
+
+- No authentication yet (Phase 3); the dev user switcher is not a security boundary.
+- Task deletion is not version-checked (only updates are).
+- Comments cannot be edited; no notifications, no task activity history.
+- UI not clicked through in a real browser by Claude (no browser in the session).

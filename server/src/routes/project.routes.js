@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as controller from '../controllers/project.controller.js'
+import * as taskController from '../controllers/task.controller.js'
 import { validate } from '../middleware/validate.js'
 import {
   addMemberSchema,
@@ -10,6 +11,7 @@ import {
   updateMemberSchema,
   updateProjectSchema,
 } from '../validators/project.validator.js'
+import { createTaskSchema, listProjectTasksQuerySchema } from '../validators/task.validator.js'
 
 // Mounted at /api/projects (behind requireDevActor, see routes/index.js).
 // Permission checks happen in the services via policies/project.policy.js.
@@ -29,5 +31,13 @@ router.patch(
   controller.updateMember,
 )
 router.delete('/:id/members/:userId', validate({ params: memberParamsSchema }), controller.removeMember)
+
+// Phase 2: tasks of one project (single-task routes live in task.routes.js).
+router.get(
+  '/:id/tasks',
+  validate({ params: projectIdParamSchema, query: listProjectTasksQuerySchema }),
+  taskController.listProjectTasks,
+)
+router.post('/:id/tasks', validate({ params: projectIdParamSchema, body: createTaskSchema }), taskController.createTask)
 
 export default router

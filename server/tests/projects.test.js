@@ -110,6 +110,7 @@ describe('GET /api/projects/:id', () => {
       canDelete: false,
       canAssignManager: false,
       canManageMembers: true,
+      canManageTasks: true,
     })
   })
 

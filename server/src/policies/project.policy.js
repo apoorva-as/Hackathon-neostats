@@ -66,5 +66,7 @@ export function projectPermissions(actor, project) {
     canDelete: canDeleteProject(actor),
     canAssignManager: canAssignManager(actor),
     canManageMembers: canManageMembers(actor, project),
+    // Phase 2: only the project's manager creates, assigns and deletes tasks.
+    canManageTasks: actor.role === ROLES.PROJECT_MANAGER && project.managerId === actor.id,
   }
 }

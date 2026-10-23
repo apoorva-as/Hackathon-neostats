@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **Phase 1 implemented** (users, projects, memberships, permission policy, temporary dev user switcher). Sections marked **(planned)** are not implemented yet.
+> Status: **Phases 1–2 implemented** (users, projects, memberships, tasks, comments, optimistic concurrency, permission policies, temporary dev user switcher). Sections marked **(planned)** are not implemented yet.
 
 ## Overview
 
@@ -18,7 +18,7 @@
 - Hold UI state (currently the selected development user in `DevUserContext`; later the logged-in user).
 - **Does not** hold secrets, talk to the database, or make final security decisions.
 
-Implemented now: `AppLayout` (sidebar, header, user switcher) and pages for the dashboard, project list, create/edit, project details with team management, and users. Data loading goes through `services/*.js` and the `useApi` hook. `utils/permissions.js` decides which buttons to show, as UX only; the API's `permissions` object and 403 responses are authoritative.
+Implemented now: `AppLayout` (sidebar, header, user switcher) and pages for the dashboard (with open/assigned tasks), project list, create/edit, project details with tasks and team management, task create (`/projects/:id/tasks/new`), task details with edit form, status change and comments (`/tasks/:id`), and users. Data loading goes through `services/*.js` and the `useApi` hook. `utils/permissions.js` decides which buttons to show, as UX only; the API's `permissions` object and 403 responses are authoritative.
 
 ## 2. Backend responsibilities (`server/`)
 
@@ -27,23 +27,33 @@ Implemented now: `AppLayout` (sidebar, header, user switcher) and pages for the 
 - Be the only component that talks to PostgreSQL (through Prisma).
 - Return consistent JSON success and error shapes.
 
-Implemented now: health routes, `/api/projects` (+ members), `/api/users`, `/api/dev/users`, Zod validation middleware, permission policy, central error handler (maps Prisma errors to safe 4xx responses).
+Implemented now: health routes, `/api/projects` (+ members, + tasks), `/api/tasks` (+ comments), `/api/users`, `/api/dev/users`, Zod validation middleware, permission policy, central error handler (maps Prisma errors to safe 4xx responses).
 
 ## 3. Database responsibilities
 
-- Durable storage for users, projects, memberships, tasks and comments **(planned models)**.
-- Enforce integrity: primary/foreign keys, unique constraints, cascade rules **(planned)**.
+- Durable storage for users, projects, memberships, tasks and comments.
+- Enforce integrity: primary/foreign keys, unique constraints, cascade rules.
 - Local PostgreSQL 16 on port 5433, database `neostats_project_manager`.
 
-Implemented now (migration `20261023080509_init_users_projects_members`):
+Implemented now (migrations `20261023080509_init_users_projects_members`, `20261023090030_add_tasks_comments`):
 
 ```
 users ──1───────────< projects.managerId (nullable, ON DELETE SET NULL)
   │
-  └──1──< project_members >──1── projects
-          (projectId, userId) UNIQUE; ON DELETE CASCADE on both FKs
-          role: MEMBER | VIEWER (project-level)
+  ├──1──< project_members >──1── projects
+  │       (projectId, userId) UNIQUE; ON DELETE CASCADE on both FKs
+  │       role: MEMBER | VIEWER (project-level)
+  │
+  ├──1──< tasks.assigneeId (nullable, ON DELETE SET NULL)
+  │       tasks >──1── projects (ON DELETE CASCADE)
+  │       status TODO|IN_PROGRESS|DONE, priority LOW|MEDIUM|HIGH, dueDate DATE?, version INT default 1
+  │
+  └──1──< comments.authorId (ON DELETE CASCADE)
+          comments >──1── tasks (ON DELETE CASCADE)
 ```
+
+- Deleting a project deletes its tasks, which deletes their comments (no orphans). Users are never hard-deleted.
+- A task's assignee must be an active `TEAM_MEMBER` with project role `MEMBER` in that project. This is checked in `task.service.js` (a cross-table rule a foreign key cannot express). Removing a member or making them read-only unassigns their tasks in the same transaction.
 
 - `users.role` is the global role enum (`ADMIN`, `PROJECT_MANAGER`, `TEAM_MEMBER`, `VIEWER`). `users.email` is unique and stored lowercase. `isActive` supports soft deactivation.
 - The manager lives **only** in `projects.managerId` and must be a `PROJECT_MANAGER`. Members must be `TEAM_MEMBER`s. The two can never contradict each other.
@@ -110,7 +120,8 @@ request → cors → json → /api router → requireDevActor → validate(zod) 
 ```
 
 - `requireDevActor` reads `X-Dev-User-Id`, loads the user from PostgreSQL and sets `req.actor`. **It is not authentication:** any id can be chosen, so it is for local demos only, and it is disabled in production. The role comes from the database, never from the client.
-- Services pass `req.actor` to `policies/project.policy.js` (`visibleProjectsWhere`, `canViewProject`, `canEditProject`, `canManageMembers`, `canAssignManager`, …). The visibility rule is also applied as a Prisma `where` filter, so lists only ever contain permitted rows.
+- Services pass `req.actor` to `policies/project.policy.js` and `policies/task.policy.js` (`visibleProjectsWhere`, `canViewProject`, `canEditProject`, `canManageMembers`, `canAssignManager`, …). The visibility rule is also applied as a Prisma `where` filter, so lists only ever contain permitted rows.
+- Task rules (`task.policy.js`): reading follows project visibility; only the project's manager creates, deletes and assigns tasks; the assignee (project role `MEMBER`) may change only `status` and `description`; comments can be added by the manager and working members and deleted by their author, the manager or an Admin. Archived projects are read-only (409).
 - Phase 3 swaps `requireDevActor` for a JWT `requireAuth` that sets the same `req.actor`. Policies and services do not change.
 
 ## 10. Authentication (planned, Phase 3)
@@ -122,20 +133,23 @@ request → cors → json → /api router → requireDevActor → validate(zod) 
 - Role and project checks reuse the Phase 1 policy module.
 - Frontend role checks only hide buttons; **the backend is the security boundary.**
 
-## 11. Concurrent task updates (planned, Phase 2)
+## 11. Concurrent task updates (implemented, Phase 2)
 
-Optimistic concurrency control:
+Optimistic concurrency control (`server/src/services/task.service.js#updateTask`):
 
-1. The `Task` model gets an integer `version` column (default 1).
-2. Clients receive `version` with each task and must send it back on update.
-3. The service updates atomically, only if the version still matches:
+1. `tasks.version` is an integer column (default 1), returned with every task.
+2. `PATCH /api/tasks/:id` requires the `version` the client last loaded.
+3. After the permission checks, the service updates atomically, only if the version still matches:
    ```js
    const result = await prisma.task.updateMany({
-     where: { id, version: clientVersion },
+     where: { id: taskId, version },
      data: { ...changes, version: { increment: 1 } },
    })
-   if (result.count === 0) throw new ApiError(409, 'Task was modified by someone else', 'CONFLICT')
+   if (result.count === 0) throw new ApiError(409, '…', 'VERSION_CONFLICT', undefined, { currentVersion, currentTask })
    ```
-4. On **409 Conflict** the client reloads the latest task and asks the user to re-apply their change.
+   This is a single `UPDATE … WHERE id = $1 AND version = $2` statement. PostgreSQL row locking means two concurrent requests with the same version cannot both match: the second sees the incremented version and updates 0 rows. There is no separate "read, compare, then write" step.
+4. On **409 `VERSION_CONFLICT`** the UI shows "This task changed since you opened it. Your changes were not saved." with a **Reload the latest version** button. It never retries or overwrites automatically.
 
-This avoids long-held locks and works with the stateless JWT API.
+Because a matching version also means the task (including its assignee) is unchanged since the permission check read it, a concurrent reassignment cannot slip past the check. Unassigning tasks when a member leaves also bumps `version`.
+
+This avoids long-held locks and works with the stateless JWT API planned for Phase 3.

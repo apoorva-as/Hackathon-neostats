@@ -25,11 +25,11 @@ export function roleSummary(role) {
     case 'ADMIN':
       return 'You can see every project, create and delete projects, and assign project managers.'
     case 'PROJECT_MANAGER':
-      return 'You see the projects you manage and can add or remove their team members.'
+      return 'You manage your projects: their teams, tasks, assignments and status.'
     case 'TEAM_MEMBER':
-      return 'You see the projects you belong to and who you work with.'
+      return 'You see your projects and their tasks, update the tasks assigned to you, and comment.'
     case 'VIEWER':
-      return 'You have read-only access to projects and their teams.'
+      return 'You have read-only access to projects, teams, tasks and comments.'
     default:
       return ''
   }

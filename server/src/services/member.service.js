@@ -70,14 +70,26 @@ export async function addMember(actor, projectId, { userId, role }) {
   }
 }
 
+// Tasks a user can no longer work on (removed, or made read-only) become
+// unassigned in the same transaction. The version is bumped so anyone editing
+// those tasks with an older copy gets a 409 instead of overwriting.
+const unassignTasks = (projectId, userId) =>
+  prisma.task.updateMany({
+    where: { projectId, assigneeId: userId },
+    data: { assigneeId: null, version: { increment: 1 } },
+  })
+
 export async function updateMemberRole(actor, projectId, userId, { role }) {
   await getManageableProject(actor, projectId)
   try {
-    return await prisma.projectMember.update({
+    const update = prisma.projectMember.update({
       where: { projectId_userId: { projectId, userId } },
       data: { role },
       select: memberSelect,
     })
+    if (role !== 'VIEWER') return await update
+    const [member] = await prisma.$transaction([update, unassignTasks(projectId, userId)])
+    return member
   } catch (err) {
     if (isPrismaError(err, 'P2025')) {
       throw new ApiError(404, 'This user is not a member of the project.', 'MEMBER_NOT_FOUND')
@@ -86,13 +98,15 @@ export async function updateMemberRole(actor, projectId, userId, { role }) {
   }
 }
 
-// Deletes only the membership row; the user account is untouched.
+// Deletes only the membership row (and unassigns the user's tasks in this
+// project); the user account is untouched.
 export async function removeMember(actor, projectId, userId) {
   await getManageableProject(actor, projectId)
   try {
-    await prisma.projectMember.delete({
-      where: { projectId_userId: { projectId, userId } },
-    })
+    await prisma.$transaction([
+      prisma.projectMember.delete({ where: { projectId_userId: { projectId, userId } } }),
+      unassignTasks(projectId, userId),
+    ])
   } catch (err) {
     if (isPrismaError(err, 'P2025')) {
       throw new ApiError(404, 'This user is not a member of the project.', 'MEMBER_NOT_FOUND')

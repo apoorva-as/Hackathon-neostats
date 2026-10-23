@@ -52,6 +52,7 @@ export function errorHandler(err, req, res, next) {
       // Unexpected errors get a generic message so internals are not leaked.
       message: isServerError && !err.statusCode ? 'Internal server error' : err.message,
       ...(err.details ? { details: err.details } : {}),
+      ...(err instanceof ApiError && err.extra ? err.extra : {}),
     },
   })
 }

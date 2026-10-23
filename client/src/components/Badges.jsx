@@ -1,4 +1,4 @@
-import { PROJECT_ROLE_LABELS, ROLE_LABELS, STATUS_LABELS, initials } from '../utils/labels.js'
+import { PRIORITY_LABELS, PROJECT_ROLE_LABELS, ROLE_LABELS, STATUS_LABELS, TASK_STATUS_LABELS, initials } from '../utils/labels.js'
 
 const STATUS_STYLES = {
   ACTIVE: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
@@ -18,6 +18,17 @@ const ROLE_STYLES = {
   TEAM_MEMBER: 'bg-teal-50 text-teal-700 ring-teal-600/20',
   VIEWER: 'bg-slate-100 text-slate-600 ring-slate-500/20',
 }
+const TASK_STATUS_STYLES = {
+  TODO: 'bg-slate-100 text-slate-700 ring-slate-500/20',
+  IN_PROGRESS: 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
+  DONE: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+}
+const TASK_STATUS_DOTS = { TODO: 'bg-slate-400', IN_PROGRESS: 'bg-indigo-500', DONE: 'bg-emerald-500' }
+const PRIORITY_STYLES = {
+  LOW: 'bg-slate-50 text-slate-600 ring-slate-500/20',
+  MEDIUM: 'bg-amber-50 text-amber-800 ring-amber-600/20',
+  HIGH: 'bg-red-50 text-red-700 ring-red-600/20',
+}
 const AVATAR_COLORS = ['bg-indigo-500', 'bg-teal-500', 'bg-rose-500', 'bg-amber-500', 'bg-sky-500', 'bg-violet-500']
 
 const base = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset'
@@ -27,6 +38,23 @@ export function StatusBadge({ status }) {
     <span className={`${base} ${STATUS_STYLES[status] ?? STATUS_STYLES.ARCHIVED}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOTS[status] ?? 'bg-slate-400'}`} />
       {STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+export function TaskStatusBadge({ status }) {
+  return (
+    <span className={`${base} ${TASK_STATUS_STYLES[status] ?? TASK_STATUS_STYLES.TODO}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${TASK_STATUS_DOTS[status] ?? 'bg-slate-400'}`} />
+      {TASK_STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+export function PriorityBadge({ priority }) {
+  return (
+    <span className={`${base} ${PRIORITY_STYLES[priority] ?? PRIORITY_STYLES.LOW}`}>
+      {PRIORITY_LABELS[priority] ?? priority}
     </span>
   )
 }

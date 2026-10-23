@@ -1,10 +1,11 @@
-// Development seed data for Phase 1 (users, projects, memberships).
+// Development seed data (users, projects, memberships, tasks, comments).
 //
 // Run with:  npm run db:seed   (from the repo root or server/)
 //
 // Idempotent: running it again creates nothing new and never overwrites
 // existing rows (users are matched by email, projects by name, memberships
-// by the (projectId, userId) unique key). No passwords are created: login
+// by the (projectId, userId) unique key, tasks by (project, title), comments
+// by (task, author, body)). No passwords are created: login
 // arrives in Phase 3.
 import { pathToFileURL } from 'node:url'
 import { prisma } from '../src/config/prisma.js'
@@ -68,8 +69,66 @@ export const SEED_PROJECTS = [
   },
 ]
 
+// Assignees are always project MEMBERs (never read-only VIEWER members).
+export const SEED_TASKS = [
+  {
+    project: 'Website Redesign',
+    title: 'Design new homepage hero',
+    description: 'Mockups for desktop and mobile using the new brand palette.',
+    status: 'IN_PROGRESS',
+    priority: 'HIGH',
+    dueDate: '2026-11-15',
+    assigneeEmail: 'aisha@neostats.local',
+    comments: [
+      { email: 'priya.pm@neostats.local', body: 'Please share a first draft by Friday.' },
+      { email: 'aisha@neostats.local', body: 'Draft is in Figma, link in the description soon.' },
+    ],
+  },
+  {
+    project: 'Website Redesign',
+    title: 'Migrate blog posts to the new CMS',
+    description: 'Export the 120 existing posts and import them with redirects.',
+    status: 'TODO',
+    priority: 'MEDIUM',
+    dueDate: '2026-12-01',
+    assigneeEmail: 'ben@neostats.local',
+    comments: [],
+  },
+  {
+    project: 'Website Redesign',
+    title: 'Set up analytics events',
+    description: '',
+    status: 'TODO',
+    priority: 'LOW',
+    dueDate: null,
+    assigneeEmail: null,
+    comments: [],
+  },
+  {
+    project: 'Mobile App Launch',
+    title: 'App store screenshots',
+    description: 'Five screenshots per platform.',
+    status: 'DONE',
+    priority: 'MEDIUM',
+    dueDate: '2026-10-20',
+    assigneeEmail: 'chloe@neostats.local',
+    comments: [{ email: 'ben@neostats.local', body: 'Looks great, approved.' }],
+  },
+  {
+    project: 'Data Warehouse Migration',
+    title: 'Write dbt models for revenue reports',
+    description: 'Port the three legacy revenue views to dbt.',
+    status: 'IN_PROGRESS',
+    priority: 'HIGH',
+    dueDate: '2026-11-30',
+    assigneeEmail: 'chloe@neostats.local',
+    comments: [],
+  },
+]
+
 export async function runSeed(client = prisma) {
-  const counts = { usersCreated: 0, projectsCreated: 0, membershipsCreated: 0 }
+  const counts = { usersCreated: 0, projectsCreated: 0, membershipsCreated: 0, tasksCreated: 0, commentsCreated: 0 }
+  const projectIdByName = new Map()
   const userIdByEmail = new Map()
 
   for (const user of SEED_USERS) {
@@ -99,6 +158,7 @@ export async function runSeed(client = prisma) {
       })
       counts.projectsCreated++
     }
+    projectIdByName.set(project.name, record.id)
 
     for (const member of project.members) {
       const userId = userIdByEmail.get(member.email)
@@ -107,6 +167,37 @@ export async function runSeed(client = prisma) {
       if (exists) continue
       await client.projectMember.create({ data: { projectId: record.id, userId, role: member.role } })
       counts.membershipsCreated++
+    }
+  }
+
+  for (const task of SEED_TASKS) {
+    const projectId = projectIdByName.get(task.project)
+    let record = await client.task.findFirst({ where: { projectId, title: task.title }, select: { id: true } })
+    if (!record) {
+      record = await client.task.create({
+        data: {
+          projectId,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          dueDate: task.dueDate ? new Date(`${task.dueDate}T00:00:00.000Z`) : null,
+          assigneeId: task.assigneeEmail ? userIdByEmail.get(task.assigneeEmail) : null,
+        },
+        select: { id: true },
+      })
+      counts.tasksCreated++
+    }
+
+    for (const comment of task.comments) {
+      const authorId = userIdByEmail.get(comment.email)
+      const exists = await client.comment.findFirst({
+        where: { taskId: record.id, authorId, body: comment.body },
+        select: { id: true },
+      })
+      if (exists) continue
+      await client.comment.create({ data: { taskId: record.id, authorId, body: comment.body } })
+      counts.commentsCreated++
     }
   }
 

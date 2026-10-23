@@ -2,7 +2,7 @@
 // Docs: https://www.prisma.io/docs/orm/prisma-schema
 //
 // Phase 1 models: User, Project, ProjectMember.
-// Task and Comment models arrive in Phase 2; password/auth fields in Phase 3.
+// Phase 2 models: Task, Comment. Password/auth fields arrive in Phase 3.
 
 generator client {
   provider = "prisma-client-js"
@@ -38,6 +38,19 @@ enum ProjectRole {
   VIEWER
 }
 
+// Workflow state of a task.
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   name      String   @db.VarChar(100)
@@ -53,6 +66,8 @@ model User {
 
   managedProjects Project[]       @relation("ProjectManager")
   memberships     ProjectMember[]
+  assignedTasks   Task[]          @relation("TaskAssignee")
+  comments        Comment[]
 
   @@index([role])
   @@map("users")
@@ -73,6 +88,7 @@ model Project {
   updatedAt   DateTime      @updatedAt
 
   members ProjectMember[]
+  tasks   Task[]
 
   @@index([managerId])
   @@index([status])
@@ -96,4 +112,50 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@map("project_members")
+}
+
+model Task {
+  id          Int          @id @default(autoincrement())
+  projectId   Int
+  title       String       @db.VarChar(200)
+  description String       @default("") @db.VarChar(5000)
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  // Calendar date only (no time of day). Optional.
+  dueDate     DateTime?    @db.Date
+  // Optional: a task can be unassigned. When set, the server guarantees the
+  // user is an active TEAM_MEMBER with project role MEMBER in this project.
+  assigneeId  Int?
+  // Optimistic concurrency: every update must send the version it read and
+  // is applied only WHERE id = ? AND version = ?, incrementing it. A stale
+  // version matches no row and the API answers 409 VERSION_CONFLICT.
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Deleting a project deletes its tasks (and, through Comment, their comments).
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Users are never hard-deleted; if one were, their tasks become unassigned.
+  assignee User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  comments Comment[]
+
+  @@index([projectId, status])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  taskId    Int
+  authorId  Int
+  body      String   @db.VarChar(2000)
+  createdAt DateTime @default(now())
+
+  // Comments live and die with their task (no orphans).
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([authorId])
+  @@map("comments")
 }

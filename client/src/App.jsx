@@ -7,6 +7,8 @@ import ProjectCreatePage from './pages/ProjectCreatePage.jsx'
 import ProjectDetailsPage from './pages/ProjectDetailsPage.jsx'
 import ProjectEditPage from './pages/ProjectEditPage.jsx'
 import ProjectsPage from './pages/ProjectsPage.jsx'
+import TaskCreatePage from './pages/TaskCreatePage.jsx'
+import TaskDetailsPage from './pages/TaskDetailsPage.jsx'
 import UsersPage from './pages/UsersPage.jsx'
 
 // Pages decide what each role sees; the API enforces every permission again.
@@ -21,6 +23,8 @@ function App() {
           <Route path="/projects/new" element={<ProjectCreatePage />} />
           <Route path="/projects/:id" element={<ProjectDetailsPage />} />
           <Route path="/projects/:id/edit" element={<ProjectEditPage />} />
+          <Route path="/projects/:id/tasks/new" element={<TaskCreatePage />} />
+          <Route path="/tasks/:id" element={<TaskDetailsPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

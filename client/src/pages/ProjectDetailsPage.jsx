@@ -7,6 +7,7 @@ import { Alert, Spinner } from '../components/Feedback.jsx'
 import { inputClass } from '../components/FormField.jsx'
 import Icon from '../components/Icon.jsx'
 import PageHeader, { Card } from '../components/PageHeader.jsx'
+import ProjectTasksSection from '../components/ProjectTasksSection.jsx'
 import TeamSection from '../components/TeamSection.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { getErrorMessage } from '../services/api.js'
@@ -20,6 +21,7 @@ function ManagerAssignment({ project, onAssigned }) {
   const [managerId, setManagerId] = useState(project.managerId ? String(project.managerId) : '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [counter, setCounter] = useState(0)
   const unchanged = (managerId || null) === (project.managerId ? String(project.managerId) : null)
 
   async function handleAssign() {
@@ -95,7 +97,7 @@ export default function ProjectDetailsPage() {
   }
 
   const { permissions } = project
-  const readOnly = !permissions.canEdit && !permissions.canManageMembers
+  const readOnly = !permissions.canEdit && !permissions.canManageMembers && !permissions.canManageTasks
 
   async function handleDelete() {
     setDeleting(true)
@@ -160,14 +162,9 @@ export default function ProjectDetailsPage() {
             )}
           </Card>
 
-          <TeamSection project={project} onTeamChanged={reload} />
+          <ProjectTasksSection project={project} />
 
-          <Card title="Tasks">
-            <div className="flex items-center gap-3 text-sm text-slate-500">
-              <Icon name="tasks" className="h-5 w-5 shrink-0" />
-              Task management for this project will be available in Phase 2.
-            </div>
-          </Card>
+          <TeamSection project={project} onTeamChanged={reload} />
         </div>
 
         <div className="space-y-6">
@@ -216,8 +213,8 @@ export default function ProjectDetailsPage() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
       >
-        <strong>{project.name}</strong> and its {project.memberCount} team membership{project.memberCount === 1 ? '' : 's'} will be
-        permanently deleted. User accounts are not affected. To keep the history instead, set the status to Archived.
+        <strong>{project.name}</strong>, its tasks and comments, and its {project.memberCount} team membership
+        {project.memberCount === 1 ? '' : 's'} will be permanently deleted. User accounts are not affected. To keep the history instead, set the status to Archived.
       </ConfirmDialog>
     </>
   )

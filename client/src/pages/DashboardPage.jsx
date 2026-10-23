@@ -2,15 +2,47 @@ import { Link } from 'react-router'
 import { StatusBadge } from '../components/Badges.jsx'
 import Button from '../components/Button.jsx'
 import { Alert, EmptyState, Spinner } from '../components/Feedback.jsx'
-import Icon from '../components/Icon.jsx'
 import PageHeader, { Card } from '../components/PageHeader.jsx'
+import TaskList from '../components/TaskList.jsx'
 import { useDevUser } from '../context/DevUserContext.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { listProjects } from '../services/projects.js'
+import { listTasks } from '../services/tasks.js'
 import { PROJECT_STATUSES, ROLE_LABELS, STATUS_LABELS } from '../utils/labels.js'
 import { canCreateProject, projectsHeading, roleSummary } from '../utils/permissions.js'
 
-// Role-aware overview: simple counts + recent projects (no analytics yet).
+// Team Members see the open tasks assigned to them; everyone else sees open
+// tasks in the projects they can see (the API applies the same visibility).
+function TasksCard({ user }) {
+  const isTeamMember = user.role === 'TEAM_MEMBER'
+  const params = { limit: 6, ...(isTeamMember ? { assigneeId: user.id } : {}) }
+  const tasks = useApi(async () => {
+    const [todo, inProgress] = await Promise.all([
+      listTasks({ ...params, status: 'TODO' }),
+      listTasks({ ...params, status: 'IN_PROGRESS' }),
+    ])
+    return { items: [...inProgress.items, ...todo.items].slice(0, 6), total: todo.meta.total + inProgress.meta.total }
+  }, [user.id])
+
+  return (
+    <Card title={`${isTeamMember ? 'My open tasks' : 'Open tasks'}${tasks.data ? ` · ${tasks.data.total}` : ''}`} padded={false}>
+      {tasks.loading && !tasks.data && <Spinner label="Loading tasks…" />}
+      {tasks.error && (
+        <div className="p-5">
+          <Alert onRetry={tasks.reload}>{tasks.error}</Alert>
+        </div>
+      )}
+      {tasks.data && tasks.data.items.length === 0 && (
+        <p className="px-5 py-8 text-center text-sm text-slate-500">
+          {isTeamMember ? 'Nothing assigned to you right now.' : 'No open tasks.'}
+        </p>
+      )}
+      {tasks.data && tasks.data.items.length > 0 && <TaskList tasks={tasks.data.items} showProject />}
+    </Card>
+  )
+}
+
+// Role-aware overview: simple counts, recent projects and open tasks.
 export default function DashboardPage() {
   const { currentUser } = useDevUser()
   const { data, loading, error, reload } = useApi(() => listProjects({ limit: 100 }), [])
@@ -79,15 +111,7 @@ export default function DashboardPage() {
               )}
             </Card>
 
-            <Card title="My tasks">
-              <div className="flex flex-col items-center py-4 text-center">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                  <Icon name="tasks" />
-                </span>
-                <p className="mt-3 text-sm font-medium text-slate-900">Tasks are coming in Phase 2</p>
-                <p className="mt-1 text-sm text-slate-500">Task lists, assignment and status updates are not built yet.</p>
-              </div>
-            </Card>
+            <TasksCard user={currentUser} />
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import { requireDevActor } from '../middleware/devActor.js'
 import devRoutes from './dev.routes.js'
 import healthRoutes from './health.routes.js'
 import projectRoutes from './project.routes.js'
+import taskRoutes from './task.routes.js'
 import userRoutes from './user.routes.js'
 
 const router = Router()
@@ -17,5 +18,6 @@ router.use('/dev', devRoutes)
 // is replaced by a JWT-based requireAuth middleware.
 router.use('/users', requireDevActor, userRoutes)
 router.use('/projects', requireDevActor, projectRoutes)
+router.use('/tasks', requireDevActor, taskRoutes)
 
 export default router

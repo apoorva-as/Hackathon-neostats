@@ -44,6 +44,12 @@ export function getErrorCode(error) {
   return error?.response?.data?.error?.code ?? null
 }
 
+// 409 VERSION_CONFLICT: the task changed since it was loaded. The API also
+// sends the latest copy (error.currentTask) so the UI can offer a reload.
+export function isVersionConflict(error) {
+  return error?.response?.status === 409 && getErrorCode(error) === 'VERSION_CONFLICT'
+}
+
 export async function getHealth() {
   const response = await api.get('/health')
   return response.data

@@ -2,9 +2,9 @@
 
 A Collaborative Project Management Platform for the **NEOSTATS Full Stack Engineering Hackathon**.
 
-> **Current status: Phase 1 complete (Admin, projects & team management).** Admins create, edit, delete and archive projects and assign project managers. Project managers manage their teams. Team members and viewers browse their projects. All data is stored in local PostgreSQL.
+> **Current status: Phase 2 complete (tasks, comments & concurrent-edit detection)** on top of Phase 1 (projects & team management). Admins manage projects and assign project managers. Project managers manage their teams and tasks (create, assign, edit, delete). Team members update the status and description of tasks assigned to them and comment. Viewers read everything. Stale task edits are rejected with **HTTP 409** instead of overwriting. All data is stored in local PostgreSQL.
 >
-> **Not built yet:** login and passwords (Phase 3), tasks and comments (Phase 2). Until login exists, a **temporary "Viewing as" user switcher** in the header lets you demo each role. **It is not authentication** (see [Development user switcher](#development-user-switcher-temporary)).
+> **Not built yet:** login and passwords (Phase 3). Until login exists, a **temporary "Viewing as" user switcher** in the header lets you demo each role. **It is not authentication** (see [Development user switcher](#development-user-switcher-temporary)).
 
 ---
 
@@ -123,7 +123,7 @@ If you get `EPERM: operation not permitted, rename … query_engine-windows.dll.
 npm run db:seed
 ```
 
-Creates 8 users (every role), 5 projects and 7 memberships. Safe to run again: it only adds what is missing and never overwrites existing rows.
+Creates 8 users (every role), 5 projects, 7 memberships, 5 tasks and 3 comments. Safe to run again: it only adds what is missing and never overwrites existing rows.
 
 ---
 
@@ -174,12 +174,14 @@ Use the **Viewing as** dropdown in the top-right corner to switch between the se
 
 | Role | Name | Email (no password yet) | What to try |
 |---|---|---|---|
-| Admin | Ada Admin | admin@neostats.local | Create a project, assign a manager to **Customer Portal**, edit, archive, delete, browse **Users** |
-| Project Manager | Priya Sharma | priya.pm@neostats.local | Sees *Website Redesign* and *Mobile App Launch* only; add/remove team members, change a member's project role |
-| Project Manager | Marcus Lee | marcus.pm@neostats.local | Manages *Data Warehouse Migration* and the archived *Legacy CRM Sunset* |
-| Team Member | Aisha Khan | aisha@neostats.local | Sees only her projects and teammates (read-only) |
-| Team Member | Ben Carter / Chloe Martin / Diego Ramos | ben@ / chloe@ / diego@neostats.local | Diego is a *read-only* member of Data Warehouse Migration |
-| Viewer | Vera Viewer | viewer@neostats.local | Sees all projects read-only, with no action buttons |
+| Admin | Ada Admin | admin@neostats.local | Create a project, assign a manager to **Customer Portal**, edit, archive, delete, browse **Users**; read all tasks, delete (moderate) comments |
+| Project Manager | Priya Sharma | priya.pm@neostats.local | Sees *Website Redesign* and *Mobile App Launch* only; manage the team; **New task**, assign/reassign, edit, delete tasks |
+| Project Manager | Marcus Lee | marcus.pm@neostats.local | Manages *Data Warehouse Migration* and the archived *Legacy CRM Sunset* (read-only) |
+| Team Member | Aisha Khan | aisha@neostats.local | Dashboard shows *her* open tasks; on her task: change status/description, comment |
+| Team Member | Ben Carter / Chloe Martin / Diego Ramos | ben@ / chloe@ / diego@neostats.local | Diego is a *read-only* member of Data Warehouse Migration (can read, not comment) |
+| Viewer | Vera Viewer | viewer@neostats.local | Sees all projects, tasks and comments read-only, with no action buttons |
+
+**Try the conflict check:** open the same task as Priya and keep the edit form open. Switch to Aisha in a second browser tab and change the task's status there. Back in the first tab, save: you get *"This task changed since you opened it"* and a **Reload the latest version** button. Nothing is overwritten. (The user switcher is stored per browser, so after switching in tab 2, tab 1 keeps its already-loaded page until reload.)
 
 ### Who can do what (enforced by the server)
 
@@ -191,15 +193,21 @@ Use the **Viewing as** dropdown in the top-right corner to switch between the se
 | Assign project manager | ✅ | ❌ | ❌ | ❌ |
 | Add / remove members, change member role | ✅ | own projects | ❌ | ❌ |
 
-Only users with the global **Project Manager** role can be assigned as managers. Only **Team Members** can be added to teams. Removing a member deletes the membership, not the user. Deleting a project also deletes its memberships. An archived project's team is frozen until the project is un-archived.
+| See tasks and comments | all | own projects | own projects | all, read-only |
+| Create / delete / assign tasks | ❌ | own projects | ❌ | ❌ |
+| Edit tasks | ❌ | all fields, own projects | status + description of tasks **assigned to them** | ❌ |
+| Add comments | ❌ | own projects | projects they work on | ❌ |
+| Delete comments | any (moderation) | own projects | their own | ❌ |
+
+Only users with the global **Project Manager** role can be assigned as managers. Only **Team Members** can be added to teams. Removing a member deletes the membership, not the user. Deleting a project also deletes its memberships. An archived project's team, tasks and comments are frozen until the project is un-archived. Tasks can only be assigned to active Team Members who work on that project (not read-only members); removing a member unassigns their tasks.
 
 API reference: [docs/API.md](docs/API.md).
 
 ## Tests
 
 ```powershell
-npm test               # backend: 63 API + database tests
-npm run test:client    # frontend: 11 unit tests (form validation, role navigation)
+npm test               # backend: 101 API + database tests (incl. 409 conflict tests)
+npm run test:client    # frontend: 19 unit tests (form validation, task payloads, role navigation)
 npm run test:all       # both
 npm run lint:client    # linter
 npm run build:client   # production build
@@ -220,7 +228,7 @@ The backend tests need PostgreSQL running, but they **never touch your developme
 | Create + apply a migration (development) | `npm run prisma:migrate:dev -- --name <short_name>` |
 | Browse data | `npm run prisma:studio` |
 
-The schema (`server/prisma/schema.prisma`) defines `User`, `Project` and `ProjectMember`. Current migration: `20261023080509_init_users_projects_members`.
+The schema (`server/prisma/schema.prisma`) defines `User`, `Project`, `ProjectMember`, `Task` and `Comment`. Migrations: `20261023080509_init_users_projects_members`, `20261023090030_add_tasks_comments` (additive: two new tables and enums).
 
 To change the schema later:
 
@@ -268,9 +276,12 @@ To change the schema later:
 | Team API: list, add, change project role, remove; duplicates rejected | ✅ Verified |
 | Server-side permission checks per role | ✅ Verified (tests) |
 | React UI: dashboard, projects, create/edit, details, team management, users list, user switcher | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
-| Backend tests (63) and frontend unit tests (11) | ✅ Passing |
+| Tasks: create, list (filters + pagination), view, edit, assign, status, delete | ✅ Verified (tests + manual API checks) |
+| Comments: list, add, delete with role rules | ✅ Verified (tests) |
+| Concurrent-edit detection (`version`, HTTP 409) incl. simultaneous requests | ✅ Verified (tests + manual API check) |
+| Task UI: project task list, create, details/edit, status change, comments, conflict prompt, dashboard tasks | ✅ Builds and lints. Not yet clicked through in a browser: please check manually |
+| Backend tests (101) and frontend unit tests (19) | ✅ Passing |
 | Login, passwords, JWT (Phase 3) | ❌ Not implemented. A temporary user switcher is used instead |
 | User create / edit / deactivate (Phase 3) | ❌ Not implemented (read-only list only) |
-| Tasks, comments, concurrent-update conflicts (Phase 2) | ❌ Not implemented |
 
 Architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

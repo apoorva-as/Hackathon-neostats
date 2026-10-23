@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { after, beforeEach, describe, test } from 'node:test'
 import { Prisma } from '@prisma/client'
-import { runSeed, SEED_PROJECTS, SEED_USERS } from '../prisma/seed.js'
+import { runSeed, SEED_PROJECTS, SEED_TASKS, SEED_USERS } from '../prisma/seed.js'
 import { createProject, createUser, prisma, resetDatabase } from './helpers/db.js'
 
 beforeEach(() => resetDatabase())
@@ -74,6 +74,8 @@ describe('seed script', () => {
       usersCreated: SEED_USERS.length,
       projectsCreated: SEED_PROJECTS.length,
       membershipsCreated: expectedMemberships,
+      tasksCreated: SEED_TASKS.length,
+      commentsCreated: SEED_TASKS.reduce((n, t) => n + t.comments.length, 0),
     })
     const roles = await prisma.user.groupBy({ by: ['role'], _count: true })
     assert.equal(roles.length, 4)
@@ -87,7 +89,14 @@ describe('seed script', () => {
     await prisma.user.update({ where: { id: admin.id }, data: { name: 'Renamed By Hand' } })
 
     const second = await runSeed(prisma)
-    assert.deepEqual(second, { usersCreated: 0, projectsCreated: 0, membershipsCreated: 0 })
+    assert.deepEqual(second, {
+      usersCreated: 0,
+      projectsCreated: 0,
+      membershipsCreated: 0,
+      tasksCreated: 0,
+      commentsCreated: 0,
+    })
+    assert.equal(await prisma.task.count(), SEED_TASKS.length)
     assert.equal(await prisma.user.count(), SEED_USERS.length)
     assert.equal(await prisma.project.count(), SEED_PROJECTS.length)
     const after = await prisma.user.findUnique({ where: { id: admin.id } })
