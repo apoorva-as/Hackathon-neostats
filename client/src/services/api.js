@@ -15,7 +15,8 @@ const api = axios.create({
 
 // The AuthProvider registers a callback here. When any request (other than
 // the login form itself) answers 401, the session is gone (expired, logged
-// out elsewhere, or the account was deactivated), so the app returns to /login.
+// out elsewhere, or the account was deactivated), so the app returns to the
+// landing page (RequireAuth), where the user can sign in again.
 let onUnauthorized = null
 
 export function setUnauthorizedHandler(handler) {

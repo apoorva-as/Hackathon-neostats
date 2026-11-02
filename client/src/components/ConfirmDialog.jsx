@@ -31,12 +31,12 @@ export default function ConfirmDialog({
         event.preventDefault()
         if (!loading) onCancel()
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl p-0 shadow-xl backdrop:bg-slate-900/50"
+      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-slate-200 p-0 shadow-2xl backdrop:bg-slate-900/40"
     >
       <div className="p-6">
         <div className="flex items-start gap-4">
           <span
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${danger ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${danger ? 'bg-red-100 text-red-600' : 'bg-brand-100 text-brand-600'}`}
           >
             <Icon name="alert" />
           </span>
@@ -47,7 +47,7 @@ export default function ConfirmDialog({
           </div>
         </div>
       </div>
-      <div className="flex justify-end gap-2 rounded-b-xl bg-slate-50 px-6 py-3">
+      <div className="flex justify-end gap-2 rounded-b-2xl border-t border-slate-100 bg-slate-50/80 px-6 py-3">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>

@@ -21,13 +21,13 @@ export default function RoleSelector({ value, onChange, invalid = false, labelId
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(role)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium ring-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium ring-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               selected
-                ? 'bg-indigo-50 text-indigo-700 ring-indigo-500'
+                ? 'bg-brand-50 text-brand-700 ring-brand-500'
                 : `bg-white text-slate-700 hover:bg-slate-50 ${invalid ? 'ring-red-300' : 'ring-slate-200'}`
             }`}
           >
-            <Icon name={ROLE_ICONS[role]} className={`h-4 w-4 shrink-0 ${selected ? 'text-indigo-600' : 'text-slate-400'}`} />
+            <Icon name={ROLE_ICONS[role]} className={`h-4 w-4 shrink-0 ${selected ? 'text-brand-600' : 'text-slate-400'}`} />
             <span className="truncate">{ROLE_LABELS[role]}</span>
           </button>
         )

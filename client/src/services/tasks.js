@@ -49,3 +49,26 @@ export async function deleteComment(taskId, commentId) {
   const { data } = await api.delete(`/tasks/${taskId}/comments/${commentId}`)
   return data.data
 }
+
+// Every task the user can see, optionally filtered (e.g. { assigneeId }).
+// Follows `meta.totalPages` (100 per page); the API applies visibility.
+export async function listAllTasks(params = {}) {
+  const items = []
+  for (let page = 1; page <= 20; page += 1) {
+    const result = await listTasks({ ...params, page, limit: 100 })
+    items.push(...result.items)
+    if (page >= result.meta.totalPages) return { items, total: result.meta.total }
+  }
+  return { items, total: items.length }
+}
+
+// Every task of one project (for the board view).
+export async function listAllProjectTasks(projectId, params = {}) {
+  const items = []
+  for (let page = 1; page <= 20; page += 1) {
+    const result = await listProjectTasks(projectId, { ...params, page, limit: 100 })
+    items.push(...result.items)
+    if (page >= result.meta.totalPages) return { items, total: result.meta.total }
+  }
+  return { items, total: items.length }
+}

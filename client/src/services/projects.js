@@ -46,3 +46,15 @@ export async function removeMember(projectId, userId) {
   const { data } = await api.delete(`/projects/${projectId}/members/${userId}`)
   return data.data
 }
+
+// Every project the user can see (follows `meta.totalPages`, 100 per page).
+// The API applies the same role-based visibility as for a single page.
+export async function listAllProjects(params = {}) {
+  const items = []
+  for (let page = 1; page <= 20; page += 1) {
+    const result = await listProjects({ ...params, page, limit: 100 })
+    items.push(...result.items)
+    if (page >= result.meta.totalPages) return { items, total: result.meta.total }
+  }
+  return { items, total: items.length }
+}

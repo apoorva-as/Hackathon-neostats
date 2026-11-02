@@ -1,1 +1,124 @@
 @import "tailwindcss";
+
+/*
+  WORKSPHERE design tokens (Tailwind v4, CSS-first config).
+  `brand-*` is the primary indigo/violet scale (brand-600 = #5B4BFF,
+  brand-700 = #4938E8 hover). Neutrals use Tailwind's `slate` scale.
+*/
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-brand-50: #f3f1ff;
+  --color-brand-100: #e8e5ff;
+  --color-brand-200: #d3ceff;
+  --color-brand-300: #b2a8ff;
+  --color-brand-400: #8b7cff;
+  --color-brand-500: #6f5fff;
+  --color-brand-600: #5b4bff;
+  --color-brand-700: #4938e8;
+  --color-brand-800: #3a2cbf;
+  --color-brand-900: #2f2797;
+  --color-brand-950: #1c165c;
+
+  --color-ink: #111827;
+  --color-canvas: #f8fafc;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-lift: 0 10px 30px -12px rgb(15 23 42 / 0.18), 0 4px 10px -6px rgb(15 23 42 / 0.08);
+  --shadow-glow: 0 20px 60px -20px rgb(91 75 255 / 0.45);
+
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-float-slow: float 10s ease-in-out infinite;
+  --animate-gradient: gradient-shift 14s ease infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: var(--color-brand-200);
+    color: var(--color-brand-950);
+  }
+  /* Anchor targets on the landing page leave room for the sticky navbar. */
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+}
+
+/* Native <dialog> (ConfirmDialog): soft entrance for panel and backdrop. */
+dialog[open] {
+  animation: dialog-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+dialog[open]::backdrop {
+  animation: backdrop-in 0.18s ease-out;
+  backdrop-filter: blur(2px);
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Loading skeleton block. */
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, #eef1f5 25%, #f7f8fa 37%, #eef1f5 63%);
+  background-size: 400% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Subtle dotted grid used behind hero / auth visuals. */
+.bg-grid {
+  background-image: radial-gradient(rgb(91 75 255 / 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Thin, quiet scrollbars for the board columns and drawers. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Respect the user's reduced-motion preference everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -113,7 +113,7 @@ export default function AccountPicker({
                 choose(account)
               }}
               onMouseEnter={() => setActive(index)}
-              className={`flex cursor-pointer items-center gap-3 px-3 py-2 ${index === active ? 'bg-indigo-50' : ''}`}
+              className={`flex cursor-pointer items-center gap-3 px-3 py-2 ${index === active ? 'bg-brand-50' : ''}`}
             >
               <Avatar name={account.name} id={account.id} size="sm" />
               <div className="min-w-0 flex-1">

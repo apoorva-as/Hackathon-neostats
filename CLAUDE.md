@@ -553,3 +553,18 @@ No DELETE for users (deactivation only). Password policy: 8+ chars, a letter and
 - No self-service password change / forgot-password flow; an Admin resets passwords.
 - Deactivating a user does not unassign their tasks or managed projects; Admin/PM reassign manually (new assignments already reject inactive users).
 - Login/Users/Profile UI not clicked through in a real browser by Claude.
+
+---
+
+## Q. WORKSPHERE Frontend Redesign (2026-11-02)
+
+The UI is branded **WORKSPHERE** ("One workspace. Every project. Complete clarity."). Backend, database, cookie name (`neostats_session`), seed emails (`*@neostats.local`) and env vars are unchanged on purpose. No API or schema changes.
+
+- **Dependencies added (client, pinned):** `motion` 14.9.0 (Framer Motion, `import { motion } from 'motion/react'`), `lucide-react` 1.66.0. Inter font via Google Fonts link in `index.html`.
+- **Design tokens:** `src/index.css` `@theme` → `brand-50…950` (brand-600 `#5B4BFF`, brand-700 `#4938E8`), `ink`, `canvas`, `shadow-card/lift/glow`, animations, `.skeleton`, reduced-motion rules. `<MotionConfig reducedMotion="user">` in `main.jsx`.
+- **Routes:** `/` landing (public; signed-out visitors of any app page and sign-out land here, `state.from` is forwarded by its Sign in buttons), `/login`, `/signup` (request-access info page; there is NO self-registration, Admins create users), `/privacy`, `/terms` (placeholders), new `/tasks` (board/list). `/projects/:id?tab=overview|board|list|team`. `/users?new=1` opens the new-user form. Pages are lazy-loaded in `App.jsx`.
+- **New components:** `Logo`, `StatCard`, `ProgressBar` (+ `SegmentedBar`, `ProgressRing`), `Drawer`, `Dropdown`, `Tabs` (+ `SegmentedControl`), `SearchPalette` (Ctrl/⌘ K, uses `search` filters), `TaskBoard` (+ `TaskCard`), `TaskQuickView`, `ProjectCard`, `AuthShell`, `dashboard/Widgets.jsx`, `landing/*` (static illustrative mock-ups, sample content only). `context/ToastContext.jsx` (`useToast()`).
+- **Dashboards:** `pages/dashboards/{Admin,Manager,Member,Viewer}Dashboard.jsx`, chosen by role in `DashboardPage`. Data from `hooks/useWorkspaceData.js` (`listAllProjects` + `listAllTasks`, which page through the API at limit 100). All numbers computed by pure, tested helpers in `utils/workspaceStats.js`. "Recent activity" = most recently updated tasks (no activity log exists).
+- **Drag-and-drop:** `hooks/useBoardTasks.js` sends `PATCH /tasks/:id { version, status }` optimistically; reverts + toast on 403/409, reloads on `VERSION_CONFLICT`. `canChangeTaskStatus` in `utils/permissions.js` is a UX hint only (PM: yes; Team Member: own tasks; Admin/Viewer: no; archived: no).
+- **Nav:** `navItemsFor` now includes `/tasks` ("My tasks" for Team Members). `breadcrumbsFor(pathname)` drives the top bar and tab title.
+- **Verified 2026-11-02:** client tests 43/43, server tests 147/147, lint 0 warnings, build OK. Pages rendered in headless Chrome for all four roles (desktop + 390px mobile) with no JS errors; Viewer PATCH → 403 and stale version → 409 against the dev API (no data changed).

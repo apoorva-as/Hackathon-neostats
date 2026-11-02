@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { Avatar, RoleBadge } from '../components/Badges.jsx'
 import Button from '../components/Button.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
@@ -122,7 +123,14 @@ export default function UsersPage() {
   const { currentUser } = useAuth()
   const allowed = canViewUsers(currentUser)
   const [role, setRole] = useState('')
-  const [editing, setEditing] = useState(null) // null | 'new' | user
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [editingState, setEditing] = useState(null) // null | 'new' | user
+  // "/users?new=1" (Create menu in the top bar) opens the new-user form.
+  const editing = editingState ?? (searchParams.get('new') === '1' ? 'new' : null)
+  function closeForm() {
+    setEditing(null)
+    if (searchParams.has('new')) setSearchParams({}, { replace: true })
+  }
   const [toggling, setToggling] = useState(null) // user to (de)activate
   const [toggleState, setToggleState] = useState({ loading: false, error: null })
   const [message, setMessage] = useState(null)
@@ -134,7 +142,7 @@ export default function UsersPage() {
   if (!allowed) return <NotAllowed>Only an Admin can manage users.</NotAllowed>
 
   function handleSaved(saved, isNew) {
-    setEditing(null)
+    closeForm()
     setMessage(`${saved.name} was ${isNew ? 'created' : 'updated'}.`)
     reload()
   }
@@ -156,6 +164,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users"
+        eyebrow="Administration"
         description="Create accounts, change roles, reset passwords and deactivate users. Deactivated users cannot sign in."
         actions={
           editing === null && (
@@ -178,7 +187,7 @@ export default function UsersPage() {
           user={editing === 'new' ? null : editing}
           isSelf={editing !== 'new' && editing.id === currentUser.id}
           onSaved={handleSaved}
-          onCancel={() => setEditing(null)}
+          onCancel={closeForm}
         />
       )}
 
@@ -197,11 +206,11 @@ export default function UsersPage() {
       {loading && !data && <Spinner />}
       {data && data.items.length === 0 && <EmptyState icon="users" title="No users found" />}
       {data && data.items.length > 0 && (
-        <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-card">
           {data.items.map((user) => {
             const isSelf = user.id === currentUser.id
             return (
-              <li key={user.id} className={`flex flex-wrap items-center gap-3 px-5 py-3 ${user.isActive ? '' : 'bg-slate-50'}`}>
+              <li key={user.id} className={`flex flex-wrap items-center gap-3 px-5 py-3 transition-colors hover:bg-slate-50/70 ${user.isActive ? '' : 'bg-slate-50 opacity-75'}`}>
                 <Avatar name={user.name} id={user.id} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-900">

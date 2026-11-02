@@ -195,7 +195,7 @@ export default function TeamSection({ project, onTeamChanged }) {
                   onChange={(e) => handleRoleChange(member, e.target.value)}
                   disabled={changingRoleFor === member.user.id}
                   aria-label={`Project role for ${member.user.name}`}
-                  className="rounded-lg border-0 py-1 pl-2 pr-7 text-xs ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-600"
+                  className="rounded-lg border-0 py-1 pl-2 pr-7 text-xs ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600"
                 >
                   {Object.entries(PROJECT_ROLE_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>

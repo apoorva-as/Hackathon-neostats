@@ -4,8 +4,54 @@ import Icon from './Icon.jsx'
 export function Spinner({ label = 'Loading…' }) {
   return (
     <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-500" role="status">
-      <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
       {label}
+    </div>
+  )
+}
+
+// Full-screen branded loader (session check on start-up).
+export function ScreenLoader({ label = 'Loading your workspace…' }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas" role="status">
+      <span className="relative flex h-12 w-12 items-center justify-center">
+        <span className="absolute inset-0 animate-ping rounded-2xl bg-brand-400/30" />
+        <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+        </span>
+      </span>
+      <p className="text-sm font-medium text-slate-500">{label}</p>
+    </div>
+  )
+}
+
+// Grey shimmering placeholder blocks while data loads.
+export function Skeleton({ className = 'h-4 w-full' }) {
+  return <div className={`skeleton ${className}`} aria-hidden="true" />
+}
+
+export function SkeletonCards({ count = 4, className = 'h-24' }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" role="status" aria-label="Loading">
+      {Array.from({ length: count }, (_, i) => (
+        <Skeleton key={i} className={`rounded-xl ${className}`} />
+      ))}
+    </div>
+  )
+}
+
+export function SkeletonList({ rows = 4 }) {
+  return (
+    <div className="space-y-3 p-5" role="status" aria-label="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <Skeleton className="h-8 w-8 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-2.5 w-1/3" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -16,13 +62,13 @@ const ALERT_STYLES = {
   info: 'bg-sky-50 text-sky-800 ring-sky-200',
   warning: 'bg-amber-50 text-amber-900 ring-amber-200',
 }
-const ALERT_ICONS = { error: 'alert', success: 'check', info: 'alert', warning: 'alert' }
+const ALERT_ICONS = { error: 'alert', success: 'check-circle', info: 'alert', warning: 'alert' }
 
 export function Alert({ type = 'error', children, onRetry, onDismiss }) {
   if (!children) return null
   return (
     <div
-      className={`flex items-start gap-3 rounded-lg px-4 py-3 text-sm ring-1 ring-inset ${ALERT_STYLES[type]}`}
+      className={`flex animate-fade-up items-start gap-3 rounded-lg px-4 py-3 text-sm ring-1 ring-inset ${ALERT_STYLES[type]}`}
       role={type === 'error' ? 'alert' : 'status'}
     >
       <Icon name={ALERT_ICONS[type]} className="mt-0.5 h-4 w-4 shrink-0" />
@@ -41,10 +87,12 @@ export function Alert({ type = 'error', children, onRetry, onDismiss }) {
   )
 }
 
-export function EmptyState({ icon = 'folder', title, children, action }) {
+export function EmptyState({ icon = 'folder', title, children, action, compact = false }) {
   return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+    <div
+      className={`flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-white/60 text-center ${compact ? 'px-4 py-8' : 'px-6 py-12'}`}
+    >
+      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
         <Icon name={icon} />
       </span>
       <h3 className="mt-3 text-sm font-semibold text-slate-900">{title}</h3>
